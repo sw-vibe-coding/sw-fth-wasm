@@ -14,7 +14,10 @@ enum PrimitiveId {
     Over,
     Rot,
     Add,
+    Sub,
     Mul,
+    Div,
+    Mod,
     Eq,
     Lt,
     Gt,
@@ -76,8 +79,8 @@ impl Machine {
             stack: Vec::new(),
             output: vec![
                 "Machine created.".to_string(),
-                "Primitives: DUP SWAP DROP OVER ROT + * = < > . .S CLEAR".to_string(),
-                "Compile: : ; IF ELSE THEN".to_string(),
+                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD = < > . .S CLEAR".to_string(),
+                "Compile: : ; IF ELSE THEN BEGIN UNTIL".to_string(),
             ],
             history: Vec::new(),
             trace: Vec::new(),
@@ -162,7 +165,10 @@ impl Machine {
             ("OVER", PrimitiveId::Over),
             ("ROT", PrimitiveId::Rot),
             ("+", PrimitiveId::Add),
+            ("-", PrimitiveId::Sub),
             ("*", PrimitiveId::Mul),
+            ("/", PrimitiveId::Div),
+            ("MOD", PrimitiveId::Mod),
             ("=", PrimitiveId::Eq),
             ("<", PrimitiveId::Lt),
             (">", PrimitiveId::Gt),
@@ -250,7 +256,7 @@ impl Machine {
             if !done.cf_stack.is_empty() {
                 let name = done.name.clone().unwrap_or_else(|| "<unnamed>".to_string());
                 self.output.push(format!(
-                    "compile: {} dropped; {} unclosed IF/ELSE",
+                    "compile: {} dropped; {} unclosed IF/ELSE/BEGIN",
                     name,
                     done.cf_stack.len()
                 ));
@@ -301,6 +307,29 @@ impl Machine {
                 *t = target;
             }
             p.cf_stack.push(jump_idx);
+            return;
+        }
+
+        if upper == "BEGIN" {
+            let p = self.compiling.as_mut().unwrap();
+            let idx = p.body.len();
+            p.cf_stack.push(idx);
+            return;
+        }
+
+        if upper == "UNTIL" {
+            let target = match self.compiling.as_mut().unwrap().cf_stack.pop() {
+                Some(i) => i,
+                None => {
+                    self.output.push("compile: UNTIL without BEGIN".to_string());
+                    return;
+                }
+            };
+            let p = self.compiling.as_mut().unwrap();
+            p.body.push(Op {
+                label: "UNTIL".to_string(),
+                kind: OpKind::Branch0(target),
+            });
             return;
         }
 
@@ -429,7 +458,10 @@ impl Machine {
             PrimitiveId::Over => self.prim_over(),
             PrimitiveId::Rot => self.prim_rot(),
             PrimitiveId::Add => self.prim_add(),
+            PrimitiveId::Sub => self.prim_sub(),
             PrimitiveId::Mul => self.prim_mul(),
+            PrimitiveId::Div => self.prim_div(),
+            PrimitiveId::Mod => self.prim_mod(),
             PrimitiveId::Eq => self.prim_eq(),
             PrimitiveId::Lt => self.prim_lt(),
             PrimitiveId::Gt => self.prim_gt(),
@@ -461,6 +493,19 @@ impl Machine {
         }
     }
 
+    fn prim_sub(&mut self) {
+        let b = self.pop_int();
+        let a = self.pop_int();
+        match (a, b) {
+            (Some(a), Some(b)) => {
+                let r = a - b;
+                self.stack.push(Value::Int(r));
+                self.output.push(format!("{} {} - -> {}", a, b, r));
+            }
+            _ => self.output.push("-: need two ints".to_string()),
+        }
+    }
+
     fn prim_mul(&mut self) {
         let b = self.pop_int();
         let a = self.pop_int();
@@ -471,6 +516,36 @@ impl Machine {
                 self.output.push(format!("{} {} * -> {}", a, b, r));
             }
             _ => self.output.push("*: need two ints".to_string()),
+        }
+    }
+
+    fn prim_div(&mut self) {
+        let b = self.pop_int();
+        let a = self.pop_int();
+        match (a, b) {
+            (Some(a), Some(b)) => match a.checked_div(b) {
+                Some(r) => {
+                    self.stack.push(Value::Int(r));
+                    self.output.push(format!("{} {} / -> {}", a, b, r));
+                }
+                None => self.output.push("/: divide by zero".to_string()),
+            },
+            _ => self.output.push("/: need two ints".to_string()),
+        }
+    }
+
+    fn prim_mod(&mut self) {
+        let b = self.pop_int();
+        let a = self.pop_int();
+        match (a, b) {
+            (Some(a), Some(b)) => match a.checked_rem(b) {
+                Some(r) => {
+                    self.stack.push(Value::Int(r));
+                    self.output.push(format!("{} {} MOD -> {}", a, b, r));
+                }
+                None => self.output.push("MOD: divide by zero".to_string()),
+            },
+            _ => self.output.push("MOD: need two ints".to_string()),
         }
     }
 
