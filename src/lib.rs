@@ -34,6 +34,8 @@ enum PrimitiveId {
     Cr,
     Emit,
     Space,
+    I,
+    Allot,
 }
 
 #[derive(Clone, Debug)]
@@ -65,6 +67,8 @@ enum OpKind {
     Branch0(usize),
     Jump(usize),
     Noop,
+    LoopEnter,
+    LoopNext(usize),
 }
 
 #[derive(Clone, Debug)]
@@ -105,8 +109,8 @@ impl Machine {
             memory: Vec::new(),
             output: vec![
                 "Machine created.".to_string(),
-                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD = < > . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE".to_string(),
-                "Compile: : ; IF ELSE THEN BEGIN UNTIL WHILE REPEAT".to_string(),
+                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD = < > . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I ALLOT".to_string(),
+                "Compile: : ; IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO LOOP".to_string(),
                 "Interactive: SEE <word> | VARIABLE <name> | <val> CONSTANT <name>".to_string(),
             ],
             output_line: String::new(),
@@ -224,6 +228,8 @@ impl Machine {
             ("CR", PrimitiveId::Cr),
             ("EMIT", PrimitiveId::Emit),
             ("SPACE", PrimitiveId::Space),
+            ("I", PrimitiveId::I),
+            ("ALLOT", PrimitiveId::Allot),
         ];
         for (name, id) in entries {
             self.dictionary
@@ -419,6 +425,34 @@ impl Machine {
                 kind: OpKind::Noop,
             });
             p.cf_stack.push(idx);
+            return;
+        }
+
+        if upper == "DO" {
+            let p = self.compiling.as_mut().unwrap();
+            let idx = p.body.len();
+            p.body.push(Op {
+                label: "DO".to_string(),
+                kind: OpKind::LoopEnter,
+            });
+            p.cf_stack.push(idx);
+            return;
+        }
+
+        if upper == "LOOP" {
+            let idx_do = match self.compiling.as_mut().unwrap().cf_stack.pop() {
+                Some(i) => i,
+                None => {
+                    self.output.push("compile: LOOP without DO".to_string());
+                    return;
+                }
+            };
+            let p = self.compiling.as_mut().unwrap();
+            let target = idx_do + 1;
+            p.body.push(Op {
+                label: "LOOP".to_string(),
+                kind: OpKind::LoopNext(target),
+            });
             return;
         }
 
@@ -648,6 +682,43 @@ impl Machine {
             OpKind::Noop => {
                 self.emit_trace(&op.label);
             }
+            OpKind::LoopEnter => {
+                let start = self.pop_int();
+                let limit = self.pop_int();
+                match (limit, start) {
+                    (Some(l), Some(s)) => {
+                        self.return_stack.push(Value::Int(l));
+                        self.return_stack.push(Value::Int(s));
+                        self.output.push(format!("DO {}..{}", s, l));
+                    }
+                    _ => self.output.push("DO: need limit and start".to_string()),
+                }
+                self.emit_trace(&op.label);
+            }
+            OpKind::LoopNext(target) => {
+                let len = self.return_stack.len();
+                if len < 2 {
+                    self.output.push("LOOP: return stack underflow".to_string());
+                    self.emit_trace(&op.label);
+                    return;
+                }
+                let limit = match &self.return_stack[len - 2] {
+                    Value::Int(n) => *n,
+                };
+                let new_index = match &mut self.return_stack[len - 1] {
+                    Value::Int(n) => {
+                        *n += 1;
+                        *n
+                    }
+                };
+                if new_index < limit {
+                    frames.last_mut().unwrap().pc = *target;
+                } else {
+                    self.return_stack.pop();
+                    self.return_stack.pop();
+                }
+                self.emit_trace(&op.label);
+            }
         }
     }
 
@@ -679,6 +750,8 @@ impl Machine {
             PrimitiveId::Cr => self.prim_cr(),
             PrimitiveId::Emit => self.prim_emit(),
             PrimitiveId::Space => self.prim_space(),
+            PrimitiveId::I => self.prim_i(),
+            PrimitiveId::Allot => self.prim_allot(),
         }
     }
 
@@ -956,6 +1029,38 @@ impl Machine {
 
     fn prim_space(&mut self) {
         self.output_line.push(' ');
+    }
+
+    fn prim_i(&mut self) {
+        match self.return_stack.last().cloned() {
+            Some(v) => {
+                let label = match &v {
+                    Value::Int(n) => n.to_string(),
+                };
+                self.stack.push(v);
+                self.output.push(format!("I -> {}", label));
+            }
+            None => self.output.push("I: return stack empty".to_string()),
+        }
+    }
+
+    fn prim_allot(&mut self) {
+        match self.pop_int() {
+            Some(n) if n >= 0 => {
+                for _ in 0..n {
+                    self.memory.push(Value::Int(0));
+                }
+                self.output.push(format!(
+                    "ALLOT {} cells (memory now {})",
+                    n,
+                    self.memory.len()
+                ));
+            }
+            Some(n) => self
+                .output
+                .push(format!("ALLOT: negative count {}", n)),
+            None => self.output.push("ALLOT: stack empty".to_string()),
+        }
     }
 
     fn addr_to_index(&self, addr: i32) -> Option<usize> {
