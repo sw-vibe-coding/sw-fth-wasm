@@ -10,7 +10,17 @@ function render() {
   document.getElementById("tracePane").value = machine.get_trace_text();
 }
 
+function substituteBuildInfo() {
+  for (const id of ["build-host", "build-sha", "build-timestamp"]) {
+    const el = document.getElementById(id);
+    if (el && el.textContent.includes("__BUILD_")) {
+      el.textContent = "dev";
+    }
+  }
+}
+
 async function main() {
+  substituteBuildInfo();
   await init();
   machine = new Machine();
   render();
