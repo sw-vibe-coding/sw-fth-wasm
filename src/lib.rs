@@ -146,6 +146,7 @@ impl Machine {
         for token in tokens {
             self.dispatch_token(&token);
         }
+        self.flush_output_line();
     }
 
     pub fn load_source(&mut self, src: &str) {
@@ -159,6 +160,7 @@ impl Machine {
         for token in tokens {
             self.dispatch_token(&token);
         }
+        self.flush_output_line();
         self.output
             .push(format!("Loaded source ({} chars).", src.len()));
     }
@@ -301,7 +303,6 @@ impl Machine {
 
         if let Ok(n) = token.parse::<i32>() {
             self.stack.push(Value::Int(n));
-            self.output.push(format!("push {}", n));
             return;
         }
 
@@ -310,11 +311,9 @@ impl Machine {
             Some(Word::User(ops)) => self.run_user(&upper, ops),
             Some(Word::Variable(addr)) => {
                 self.stack.push(Value::Int(addr));
-                self.output.push(format!("push addr {} ({})", addr, upper));
             }
             Some(Word::Constant(v)) => {
                 self.stack.push(Value::Int(v));
-                self.output.push(format!("push {} ({})", v, upper));
             }
             None => self.output.push(format!("unknown token: {}", token)),
         }
@@ -595,8 +594,7 @@ impl Machine {
         }
     }
 
-    fn run_user(&mut self, name: &str, ops: Vec<Op>) {
-        self.output.push(format!("call {}", name));
+    fn run_user(&mut self, _name: &str, ops: Vec<Op>) {
         let mut frames: Vec<Frame> = vec![Frame {
             ops,
             pc: 0,
@@ -631,7 +629,6 @@ impl Machine {
         match &op.kind {
             OpKind::PushInt(n) => {
                 self.stack.push(Value::Int(*n));
-                self.output.push(format!("push {}", n));
                 self.emit_trace(&op.label);
             }
             OpKind::CallPrim(p) => {
@@ -644,7 +641,6 @@ impl Machine {
                     self.emit_trace(&op.label);
                 }
                 Some(Word::User(inner)) => {
-                    self.output.push(format!("call {}", name));
                     frames.push(Frame {
                         ops: inner,
                         pc: 0,
@@ -653,12 +649,10 @@ impl Machine {
                 }
                 Some(Word::Variable(addr)) => {
                     self.stack.push(Value::Int(addr));
-                    self.output.push(format!("push addr {} ({})", addr, name));
                     self.emit_trace(&op.label);
                 }
                 Some(Word::Constant(v)) => {
                     self.stack.push(Value::Int(v));
-                    self.output.push(format!("push {} ({})", v, name));
                     self.emit_trace(&op.label);
                 }
                 None => {
@@ -689,7 +683,6 @@ impl Machine {
                     (Some(l), Some(s)) => {
                         self.return_stack.push(Value::Int(l));
                         self.return_stack.push(Value::Int(s));
-                        self.output.push(format!("DO {}..{}", s, l));
                     }
                     _ => self.output.push("DO: need limit and start".to_string()),
                 }
@@ -758,7 +751,6 @@ impl Machine {
     fn prim_dup(&mut self) {
         if let Some(top) = self.stack.last().cloned() {
             self.stack.push(top);
-            self.output.push("dup".to_string());
         } else {
             self.output.push("dup: stack empty".to_string());
         }
@@ -768,11 +760,7 @@ impl Machine {
         let b = self.pop_int();
         let a = self.pop_int();
         match (a, b) {
-            (Some(a), Some(b)) => {
-                let r = a + b;
-                self.stack.push(Value::Int(r));
-                self.output.push(format!("{} {} + -> {}", a, b, r));
-            }
+            (Some(a), Some(b)) => self.stack.push(Value::Int(a + b)),
             _ => self.output.push("+: need two ints".to_string()),
         }
     }
@@ -781,11 +769,7 @@ impl Machine {
         let b = self.pop_int();
         let a = self.pop_int();
         match (a, b) {
-            (Some(a), Some(b)) => {
-                let r = a - b;
-                self.stack.push(Value::Int(r));
-                self.output.push(format!("{} {} - -> {}", a, b, r));
-            }
+            (Some(a), Some(b)) => self.stack.push(Value::Int(a - b)),
             _ => self.output.push("-: need two ints".to_string()),
         }
     }
@@ -794,11 +778,7 @@ impl Machine {
         let b = self.pop_int();
         let a = self.pop_int();
         match (a, b) {
-            (Some(a), Some(b)) => {
-                let r = a * b;
-                self.stack.push(Value::Int(r));
-                self.output.push(format!("{} {} * -> {}", a, b, r));
-            }
+            (Some(a), Some(b)) => self.stack.push(Value::Int(a * b)),
             _ => self.output.push("*: need two ints".to_string()),
         }
     }
@@ -808,10 +788,7 @@ impl Machine {
         let a = self.pop_int();
         match (a, b) {
             (Some(a), Some(b)) => match a.checked_div(b) {
-                Some(r) => {
-                    self.stack.push(Value::Int(r));
-                    self.output.push(format!("{} {} / -> {}", a, b, r));
-                }
+                Some(r) => self.stack.push(Value::Int(r)),
                 None => self.output.push("/: divide by zero".to_string()),
             },
             _ => self.output.push("/: need two ints".to_string()),
@@ -823,10 +800,7 @@ impl Machine {
         let a = self.pop_int();
         match (a, b) {
             (Some(a), Some(b)) => match a.checked_rem(b) {
-                Some(r) => {
-                    self.stack.push(Value::Int(r));
-                    self.output.push(format!("{} {} MOD -> {}", a, b, r));
-                }
+                Some(r) => self.stack.push(Value::Int(r)),
                 None => self.output.push("MOD: divide by zero".to_string()),
             },
             _ => self.output.push("MOD: need two ints".to_string()),
@@ -835,8 +809,15 @@ impl Machine {
 
     fn prim_dot(&mut self) {
         match self.pop_int() {
-            Some(n) => self.output.push(n.to_string()),
+            Some(n) => self.output_line.push_str(&format!("{} ", n)),
             None => self.output.push(".: stack empty".to_string()),
+        }
+    }
+
+    fn flush_output_line(&mut self) {
+        if !self.output_line.is_empty() {
+            let line = std::mem::take(&mut self.output_line);
+            self.output.push(line);
         }
     }
 
@@ -864,16 +845,14 @@ impl Machine {
             (Some(a), Some(b)) => {
                 self.stack.push(b);
                 self.stack.push(a);
-                self.output.push("swap".to_string());
             }
             _ => self.output.push("swap: need two values".to_string()),
         }
     }
 
     fn prim_drop(&mut self) {
-        match self.stack.pop() {
-            Some(_) => self.output.push("drop".to_string()),
-            None => self.output.push("drop: stack empty".to_string()),
+        if self.stack.pop().is_none() {
+            self.output.push("drop: stack empty".to_string());
         }
     }
 
@@ -884,7 +863,6 @@ impl Machine {
         }
         let a = self.stack[self.stack.len() - 2].clone();
         self.stack.push(a);
-        self.output.push("over".to_string());
     }
 
     fn prim_rot(&mut self) {
@@ -895,7 +873,6 @@ impl Machine {
         let len = self.stack.len();
         let a = self.stack.remove(len - 3);
         self.stack.push(a);
-        self.output.push("rot".to_string());
     }
 
     fn prim_eq(&mut self) {
@@ -903,9 +880,7 @@ impl Machine {
         let a = self.pop_int();
         match (a, b) {
             (Some(a), Some(b)) => {
-                let flag = if a == b { -1 } else { 0 };
-                self.stack.push(Value::Int(flag));
-                self.output.push(format!("{} {} = -> {}", a, b, flag));
+                self.stack.push(Value::Int(if a == b { -1 } else { 0 }));
             }
             _ => self.output.push("=: need two ints".to_string()),
         }
@@ -916,9 +891,7 @@ impl Machine {
         let a = self.pop_int();
         match (a, b) {
             (Some(a), Some(b)) => {
-                let flag = if a < b { -1 } else { 0 };
-                self.stack.push(Value::Int(flag));
-                self.output.push(format!("{} {} < -> {}", a, b, flag));
+                self.stack.push(Value::Int(if a < b { -1 } else { 0 }));
             }
             _ => self.output.push("<: need two ints".to_string()),
         }
@@ -926,26 +899,14 @@ impl Machine {
 
     fn prim_to_r(&mut self) {
         match self.stack.pop() {
-            Some(v) => {
-                let label = match &v {
-                    Value::Int(n) => n.to_string(),
-                };
-                self.return_stack.push(v);
-                self.output.push(format!(">R {}", label));
-            }
+            Some(v) => self.return_stack.push(v),
             None => self.output.push(">R: stack empty".to_string()),
         }
     }
 
     fn prim_r_from(&mut self) {
         match self.return_stack.pop() {
-            Some(v) => {
-                let label = match &v {
-                    Value::Int(n) => n.to_string(),
-                };
-                self.stack.push(v);
-                self.output.push(format!("R> {}", label));
-            }
+            Some(v) => self.stack.push(v),
             None => self.output.push("R>: return stack empty".to_string()),
         }
     }
@@ -953,14 +914,7 @@ impl Machine {
     fn prim_fetch(&mut self) {
         match self.pop_int() {
             Some(addr) => match self.addr_to_index(addr) {
-                Some(idx) => {
-                    let v = self.memory[idx].clone();
-                    let label = match &v {
-                        Value::Int(n) => n.to_string(),
-                    };
-                    self.stack.push(v);
-                    self.output.push(format!("@ [{}] -> {}", addr, label));
-                }
+                Some(idx) => self.stack.push(self.memory[idx].clone()),
                 None => self.output.push(format!("@: bad address {}", addr)),
             },
             None => self.output.push("@: stack empty".to_string()),
@@ -972,13 +926,7 @@ impl Machine {
         let v = self.stack.pop();
         match (v, a) {
             (Some(val), Some(addr)) => match self.addr_to_index(addr) {
-                Some(idx) => {
-                    let label = match &val {
-                        Value::Int(n) => n.to_string(),
-                    };
-                    self.memory[idx] = val;
-                    self.output.push(format!("! {} -> [{}]", label, addr));
-                }
+                Some(idx) => self.memory[idx] = val,
                 None => self.output.push(format!("!: bad address {}", addr)),
             },
             _ => self.output.push("!: need value and addr".to_string()),
@@ -990,16 +938,9 @@ impl Machine {
         let d = self.pop_int();
         match (d, a) {
             (Some(delta), Some(addr)) => match self.addr_to_index(addr) {
-                Some(idx) => {
-                    match &mut self.memory[idx] {
-                        Value::Int(n) => *n += delta,
-                    }
-                    let new = match &self.memory[idx] {
-                        Value::Int(n) => n.to_string(),
-                    };
-                    self.output
-                        .push(format!("+! {} -> [{}] = {}", delta, addr, new));
-                }
+                Some(idx) => match &mut self.memory[idx] {
+                    Value::Int(n) => *n += delta,
+                },
                 None => self.output.push(format!("+!: bad address {}", addr)),
             },
             _ => self.output.push("+!: need delta and addr".to_string()),
@@ -1013,6 +954,10 @@ impl Machine {
     }
 
     fn prim_cr(&mut self) {
+        self.flush_output_line_force();
+    }
+
+    fn flush_output_line_force(&mut self) {
         let line = std::mem::take(&mut self.output_line);
         self.output.push(line);
     }
@@ -1033,13 +978,7 @@ impl Machine {
 
     fn prim_i(&mut self) {
         match self.return_stack.last().cloned() {
-            Some(v) => {
-                let label = match &v {
-                    Value::Int(n) => n.to_string(),
-                };
-                self.stack.push(v);
-                self.output.push(format!("I -> {}", label));
-            }
+            Some(v) => self.stack.push(v),
             None => self.output.push("I: return stack empty".to_string()),
         }
     }
@@ -1076,13 +1015,7 @@ impl Machine {
 
     fn prim_r_fetch(&mut self) {
         match self.return_stack.last().cloned() {
-            Some(v) => {
-                let label = match &v {
-                    Value::Int(n) => n.to_string(),
-                };
-                self.stack.push(v);
-                self.output.push(format!("R@ {}", label));
-            }
+            Some(v) => self.stack.push(v),
             None => self.output.push("R@: return stack empty".to_string()),
         }
     }
@@ -1092,9 +1025,7 @@ impl Machine {
         let a = self.pop_int();
         match (a, b) {
             (Some(a), Some(b)) => {
-                let flag = if a > b { -1 } else { 0 };
-                self.stack.push(Value::Int(flag));
-                self.output.push(format!("{} {} > -> {}", a, b, flag));
+                self.stack.push(Value::Int(if a > b { -1 } else { 0 }));
             }
             _ => self.output.push(">: need two ints".to_string()),
         }

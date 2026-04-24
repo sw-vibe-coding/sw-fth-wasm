@@ -2,6 +2,19 @@
 
 ## 2026-04-24
 
+### UI
+
+- Output pane is now user-facing only. Per-op chatter (literal pushes, stack
+  ops, arithmetic results, return-stack moves, memory fetch/store, user-word
+  call banners, DO-loop entry messages) moved out of Output — the Trace pane
+  remains the debug log. Errors, `.`, `.S`, `WORDS`, `SEE`, compile
+  confirmations (`defined X`, `VARIABLE X at addr N`, `CONSTANT X = V`),
+  reset banner, and startup banners stay
+- `.` is now Forth-style: it appends `<n> ` to the in-progress `output_line`
+  instead of emitting a new line, so `5 . 6 . 7 .` reads as `5 6 7 ` on a
+  single line. `eval_repl` / `load_source` flush any partial `output_line`
+  when the input finishes, so results always appear before the next prompt
+
 ### Documentation
 
 - README: add live-demo link (<https://sw-vibe-coding.github.io/sw-fth-wasm/>),
