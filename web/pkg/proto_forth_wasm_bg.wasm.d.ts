@@ -5,6 +5,7 @@ export const __wbg_machine_free: (a: number, b: number) => void;
 export const machine_eval_repl: (a: number, b: number, c: number) => void;
 export const machine_get_dictionary_text: (a: number) => [number, number];
 export const machine_get_history_text: (a: number) => [number, number];
+export const machine_get_memory_text: (a: number) => [number, number];
 export const machine_get_output_text: (a: number) => [number, number];
 export const machine_get_stack_text: (a: number) => [number, number];
 export const machine_get_trace_text: (a: number) => [number, number];

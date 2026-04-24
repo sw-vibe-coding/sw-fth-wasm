@@ -199,6 +199,17 @@ impl Machine {
     pub fn get_trace_text(&self) -> String {
         self.trace.join("\n")
     }
+
+    pub fn get_memory_text(&self) -> String {
+        self.memory
+            .iter()
+            .enumerate()
+            .map(|(i, v)| match v {
+                Value::Int(n) => format!("[{}] {}", i, n),
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 }
 
 impl Machine {

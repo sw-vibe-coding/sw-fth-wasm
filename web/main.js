@@ -8,6 +8,7 @@ function render() {
   document.getElementById("outputPane").value = machine.get_output_text();
   document.getElementById("historyPane").value = machine.get_history_text();
   document.getElementById("tracePane").value = machine.get_trace_text();
+  document.getElementById("memoryPane").value = machine.get_memory_text();
 }
 
 function substituteBuildInfo() {

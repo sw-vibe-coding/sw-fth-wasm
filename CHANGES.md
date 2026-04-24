@@ -4,6 +4,9 @@
 
 ### UI
 
+- Memory pane: new `#memoryPane` textarea and `Machine::get_memory_text()`
+  that prints one line per cell as `[addr] value`, so `VARIABLE`, `ALLOT`,
+  `!`, `+!` are visible alongside the Stack and Dictionary
 - Output pane is now user-facing only. Per-op chatter (literal pushes, stack
   ops, arithmetic results, return-stack moves, memory fetch/store, user-word
   call banners, DO-loop entry messages) moved out of Output — the Trace pane

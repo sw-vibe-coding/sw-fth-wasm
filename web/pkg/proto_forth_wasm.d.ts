@@ -7,6 +7,7 @@ export class Machine {
     eval_repl(line: string): void;
     get_dictionary_text(): string;
     get_history_text(): string;
+    get_memory_text(): string;
     get_output_text(): string;
     get_stack_text(): string;
     get_trace_text(): string;
@@ -23,6 +24,7 @@ export interface InitOutput {
     readonly machine_eval_repl: (a: number, b: number, c: number) => void;
     readonly machine_get_dictionary_text: (a: number) => [number, number];
     readonly machine_get_history_text: (a: number) => [number, number];
+    readonly machine_get_memory_text: (a: number) => [number, number];
     readonly machine_get_output_text: (a: number) => [number, number];
     readonly machine_get_stack_text: (a: number) => [number, number];
     readonly machine_get_trace_text: (a: number) => [number, number];
