@@ -41,6 +41,13 @@ struct Pending {
     body: Vec<Op>,
 }
 
+#[derive(Clone, Debug)]
+struct Frame {
+    ops: Vec<Op>,
+    pc: usize,
+    return_label: Option<String>,
+}
+
 #[wasm_bindgen]
 pub struct Machine {
     stack: Vec<Value>,
@@ -197,7 +204,7 @@ impl Machine {
 
         match self.dictionary.get(&upper).cloned() {
             Some(Word::Primitive(prim)) => self.execute_primitive(prim),
-            Some(Word::User(ops)) => self.execute_ops(&upper, ops),
+            Some(Word::User(ops)) => self.run_user(&upper, ops),
             None => self.output.push(format!("unknown token: {}", token)),
         }
     }
@@ -259,25 +266,66 @@ impl Machine {
         }
     }
 
-    fn execute_ops(&mut self, name: &str, ops: Vec<Op>) {
+    fn run_user(&mut self, name: &str, ops: Vec<Op>) {
         self.output.push(format!("call {}", name));
-        for op in &ops {
-            self.execute_op(op);
-            self.emit_trace(&op.label);
+        let mut frames: Vec<Frame> = vec![Frame {
+            ops,
+            pc: 0,
+            return_label: None,
+        }];
+
+        while !frames.is_empty() {
+            let next = {
+                let frame = frames.last_mut().unwrap();
+                if frame.pc >= frame.ops.len() {
+                    None
+                } else {
+                    let op = frame.ops[frame.pc].clone();
+                    frame.pc += 1;
+                    Some(op)
+                }
+            };
+
+            match next {
+                None => {
+                    let popped = frames.pop().unwrap();
+                    if let Some(label) = popped.return_label {
+                        self.emit_trace(&label);
+                    }
+                }
+                Some(op) => self.exec_op_vm(&op, &mut frames),
+            }
         }
     }
 
-    fn execute_op(&mut self, op: &Op) {
+    fn exec_op_vm(&mut self, op: &Op, frames: &mut Vec<Frame>) {
         match &op.kind {
             OpKind::PushInt(n) => {
                 self.stack.push(Value::Int(*n));
                 self.output.push(format!("push {}", n));
+                self.emit_trace(&op.label);
             }
-            OpKind::CallPrim(p) => self.execute_primitive(*p),
+            OpKind::CallPrim(p) => {
+                self.execute_primitive(*p);
+                self.emit_trace(&op.label);
+            }
             OpKind::CallByName(name) => match self.dictionary.get(name).cloned() {
-                Some(Word::Primitive(prim)) => self.execute_primitive(prim),
-                Some(Word::User(inner)) => self.execute_ops(name, inner),
-                None => self.output.push(format!("unknown token: {}", name)),
+                Some(Word::Primitive(prim)) => {
+                    self.execute_primitive(prim);
+                    self.emit_trace(&op.label);
+                }
+                Some(Word::User(inner)) => {
+                    self.output.push(format!("call {}", name));
+                    frames.push(Frame {
+                        ops: inner,
+                        pc: 0,
+                        return_label: Some(op.label.clone()),
+                    });
+                }
+                None => {
+                    self.output.push(format!("unknown token: {}", name));
+                    self.emit_trace(&op.label);
+                }
             },
         }
     }
