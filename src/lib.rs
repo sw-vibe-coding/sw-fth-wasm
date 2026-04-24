@@ -27,12 +27,24 @@ enum PrimitiveId {
     ToR,
     FromR,
     RFetch,
+    Fetch,
+    Store,
+    PlusStore,
 }
 
 #[derive(Clone, Debug)]
 enum Word {
     Primitive(PrimitiveId),
     User(Vec<Op>),
+    Variable(i32),
+    Constant(i32),
+}
+
+#[derive(Clone, Debug)]
+enum NextTokenConsumer {
+    See,
+    Variable,
+    Constant(i32),
 }
 
 #[derive(Clone, Debug)]
@@ -69,12 +81,13 @@ struct Frame {
 pub struct Machine {
     stack: Vec<Value>,
     return_stack: Vec<Value>,
+    memory: Vec<Value>,
     output: Vec<String>,
     history: Vec<String>,
     trace: Vec<String>,
     dictionary: HashMap<String, Word>,
     compiling: Option<Pending>,
-    pending_see: bool,
+    next_consumer: Option<NextTokenConsumer>,
 }
 
 #[wasm_bindgen]
@@ -84,17 +97,18 @@ impl Machine {
         let mut m = Machine {
             stack: Vec::new(),
             return_stack: Vec::new(),
+            memory: Vec::new(),
             output: vec![
                 "Machine created.".to_string(),
-                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD = < > . .S CLEAR >R R> R@".to_string(),
+                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD = < > . .S CLEAR >R R> R@ @ ! +!".to_string(),
                 "Compile: : ; IF ELSE THEN BEGIN UNTIL".to_string(),
-                "Interactive: SEE <word>".to_string(),
+                "Interactive: SEE <word> | VARIABLE <name> | <val> CONSTANT <name>".to_string(),
             ],
             history: Vec::new(),
             trace: Vec::new(),
             dictionary: HashMap::new(),
             compiling: None,
-            pending_see: false,
+            next_consumer: None,
         };
         m.install_primitives();
         m
@@ -104,7 +118,7 @@ impl Machine {
         self.stack.clear();
         self.return_stack.clear();
         self.compiling = None;
-        self.pending_see = false;
+        self.next_consumer = None;
         self.output.push("VM reset.".to_string());
         self.history.push("--- reset ---".to_string());
         self.trace.push("--- reset ---".to_string());
@@ -189,6 +203,9 @@ impl Machine {
             (">R", PrimitiveId::ToR),
             ("R>", PrimitiveId::FromR),
             ("R@", PrimitiveId::RFetch),
+            ("@", PrimitiveId::Fetch),
+            ("!", PrimitiveId::Store),
+            ("+!", PrimitiveId::PlusStore),
         ];
         for (name, id) in entries {
             self.dictionary
@@ -215,9 +232,8 @@ impl Machine {
     }
 
     fn do_dispatch(&mut self, token: &str) {
-        if self.pending_see {
-            self.pending_see = false;
-            self.handle_see(token);
+        if let Some(consumer) = self.next_consumer.take() {
+            self.handle_consumer(consumer, token);
             return;
         }
 
@@ -229,7 +245,20 @@ impl Machine {
         }
 
         if upper == "SEE" {
-            self.pending_see = true;
+            self.next_consumer = Some(NextTokenConsumer::See);
+            return;
+        }
+
+        if upper == "VARIABLE" {
+            self.next_consumer = Some(NextTokenConsumer::Variable);
+            return;
+        }
+
+        if upper == "CONSTANT" {
+            match self.pop_int() {
+                Some(v) => self.next_consumer = Some(NextTokenConsumer::Constant(v)),
+                None => self.output.push("CONSTANT: stack empty".to_string()),
+            }
             return;
         }
 
@@ -255,7 +284,36 @@ impl Machine {
         match self.dictionary.get(&upper).cloned() {
             Some(Word::Primitive(prim)) => self.execute_primitive(prim),
             Some(Word::User(ops)) => self.run_user(&upper, ops),
+            Some(Word::Variable(addr)) => {
+                self.stack.push(Value::Int(addr));
+                self.output.push(format!("push addr {} ({})", addr, upper));
+            }
+            Some(Word::Constant(v)) => {
+                self.stack.push(Value::Int(v));
+                self.output.push(format!("push {} ({})", v, upper));
+            }
             None => self.output.push(format!("unknown token: {}", token)),
+        }
+    }
+
+    fn handle_consumer(&mut self, consumer: NextTokenConsumer, token: &str) {
+        match consumer {
+            NextTokenConsumer::See => self.handle_see(token),
+            NextTokenConsumer::Variable => {
+                let name = token.to_ascii_uppercase();
+                let addr = self.memory.len() as i32;
+                self.memory.push(Value::Int(0));
+                self.dictionary
+                    .insert(name.clone(), Word::Variable(addr));
+                self.output
+                    .push(format!("VARIABLE {} at addr {}", name, addr));
+            }
+            NextTokenConsumer::Constant(v) => {
+                let name = token.to_ascii_uppercase();
+                self.dictionary
+                    .insert(name.clone(), Word::Constant(v));
+                self.output.push(format!("CONSTANT {} = {}", name, v));
+            }
         }
     }
 
@@ -402,6 +460,20 @@ impl Machine {
                     .join(" ");
                 self.output.push(format!(": {} {} ;", upper, body));
             }
+            Some(Word::Variable(addr)) => {
+                let cell = self
+                    .addr_to_index(addr)
+                    .map(|i| match &self.memory[i] {
+                        Value::Int(n) => n.to_string(),
+                    })
+                    .unwrap_or_else(|| "?".to_string());
+                self.output
+                    .push(format!("SEE {}: variable @ addr {} = {}", upper, addr, cell));
+            }
+            Some(Word::Constant(v)) => {
+                self.output
+                    .push(format!("SEE {}: constant = {}", upper, v));
+            }
             None => {
                 self.output.push(format!("SEE: unknown word {}", token));
             }
@@ -483,6 +555,16 @@ impl Machine {
                         return_label: Some(op.label.clone()),
                     });
                 }
+                Some(Word::Variable(addr)) => {
+                    self.stack.push(Value::Int(addr));
+                    self.output.push(format!("push addr {} ({})", addr, name));
+                    self.emit_trace(&op.label);
+                }
+                Some(Word::Constant(v)) => {
+                    self.stack.push(Value::Int(v));
+                    self.output.push(format!("push {} ({})", v, name));
+                    self.emit_trace(&op.label);
+                }
                 None => {
                     self.output.push(format!("unknown token: {}", name));
                     self.emit_trace(&op.label);
@@ -528,6 +610,9 @@ impl Machine {
             PrimitiveId::ToR => self.prim_to_r(),
             PrimitiveId::FromR => self.prim_r_from(),
             PrimitiveId::RFetch => self.prim_r_fetch(),
+            PrimitiveId::Fetch => self.prim_fetch(),
+            PrimitiveId::Store => self.prim_store(),
+            PrimitiveId::PlusStore => self.prim_plus_store(),
         }
     }
 
@@ -724,6 +809,73 @@ impl Machine {
             }
             None => self.output.push("R>: return stack empty".to_string()),
         }
+    }
+
+    fn prim_fetch(&mut self) {
+        match self.pop_int() {
+            Some(addr) => match self.addr_to_index(addr) {
+                Some(idx) => {
+                    let v = self.memory[idx].clone();
+                    let label = match &v {
+                        Value::Int(n) => n.to_string(),
+                    };
+                    self.stack.push(v);
+                    self.output.push(format!("@ [{}] -> {}", addr, label));
+                }
+                None => self.output.push(format!("@: bad address {}", addr)),
+            },
+            None => self.output.push("@: stack empty".to_string()),
+        }
+    }
+
+    fn prim_store(&mut self) {
+        let a = self.pop_int();
+        let v = self.stack.pop();
+        match (v, a) {
+            (Some(val), Some(addr)) => match self.addr_to_index(addr) {
+                Some(idx) => {
+                    let label = match &val {
+                        Value::Int(n) => n.to_string(),
+                    };
+                    self.memory[idx] = val;
+                    self.output.push(format!("! {} -> [{}]", label, addr));
+                }
+                None => self.output.push(format!("!: bad address {}", addr)),
+            },
+            _ => self.output.push("!: need value and addr".to_string()),
+        }
+    }
+
+    fn prim_plus_store(&mut self) {
+        let a = self.pop_int();
+        let d = self.pop_int();
+        match (d, a) {
+            (Some(delta), Some(addr)) => match self.addr_to_index(addr) {
+                Some(idx) => {
+                    match &mut self.memory[idx] {
+                        Value::Int(n) => *n += delta,
+                    }
+                    let new = match &self.memory[idx] {
+                        Value::Int(n) => n.to_string(),
+                    };
+                    self.output
+                        .push(format!("+! {} -> [{}] = {}", delta, addr, new));
+                }
+                None => self.output.push(format!("+!: bad address {}", addr)),
+            },
+            _ => self.output.push("+!: need delta and addr".to_string()),
+        }
+    }
+
+    fn addr_to_index(&self, addr: i32) -> Option<usize> {
+        if addr < 0 {
+            return None;
+        }
+        let idx = addr as usize;
+        if idx >= self.memory.len() {
+            return None;
+        }
+        Some(idx)
     }
 
     fn prim_r_fetch(&mut self) {
