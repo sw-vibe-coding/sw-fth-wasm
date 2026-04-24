@@ -24,6 +24,9 @@ enum PrimitiveId {
     Dot,
     DotS,
     Clear,
+    ToR,
+    FromR,
+    RFetch,
 }
 
 #[derive(Clone, Debug)]
@@ -45,6 +48,7 @@ enum OpKind {
     CallByName(String),
     Branch0(usize),
     Jump(usize),
+    Noop,
 }
 
 #[derive(Clone, Debug)]
@@ -64,11 +68,13 @@ struct Frame {
 #[wasm_bindgen]
 pub struct Machine {
     stack: Vec<Value>,
+    return_stack: Vec<Value>,
     output: Vec<String>,
     history: Vec<String>,
     trace: Vec<String>,
     dictionary: HashMap<String, Word>,
     compiling: Option<Pending>,
+    pending_see: bool,
 }
 
 #[wasm_bindgen]
@@ -77,15 +83,18 @@ impl Machine {
     pub fn new() -> Machine {
         let mut m = Machine {
             stack: Vec::new(),
+            return_stack: Vec::new(),
             output: vec![
                 "Machine created.".to_string(),
-                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD = < > . .S CLEAR".to_string(),
+                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD = < > . .S CLEAR >R R> R@".to_string(),
                 "Compile: : ; IF ELSE THEN BEGIN UNTIL".to_string(),
+                "Interactive: SEE <word>".to_string(),
             ],
             history: Vec::new(),
             trace: Vec::new(),
             dictionary: HashMap::new(),
             compiling: None,
+            pending_see: false,
         };
         m.install_primitives();
         m
@@ -93,7 +102,9 @@ impl Machine {
 
     pub fn reset(&mut self) {
         self.stack.clear();
+        self.return_stack.clear();
         self.compiling = None;
+        self.pending_see = false;
         self.output.push("VM reset.".to_string());
         self.history.push("--- reset ---".to_string());
         self.trace.push("--- reset ---".to_string());
@@ -175,6 +186,9 @@ impl Machine {
             (".", PrimitiveId::Dot),
             (".S", PrimitiveId::DotS),
             ("CLEAR", PrimitiveId::Clear),
+            (">R", PrimitiveId::ToR),
+            ("R>", PrimitiveId::FromR),
+            ("R@", PrimitiveId::RFetch),
         ];
         for (name, id) in entries {
             self.dictionary
@@ -201,10 +215,21 @@ impl Machine {
     }
 
     fn do_dispatch(&mut self, token: &str) {
+        if self.pending_see {
+            self.pending_see = false;
+            self.handle_see(token);
+            return;
+        }
+
         let upper = token.to_ascii_uppercase();
 
         if self.compiling.is_some() {
             self.dispatch_compile(token, &upper);
+            return;
+        }
+
+        if upper == "SEE" {
+            self.pending_see = true;
             return;
         }
 
@@ -313,6 +338,10 @@ impl Machine {
         if upper == "BEGIN" {
             let p = self.compiling.as_mut().unwrap();
             let idx = p.body.len();
+            p.body.push(Op {
+                label: "BEGIN".to_string(),
+                kind: OpKind::Noop,
+            });
             p.cf_stack.push(idx);
             return;
         }
@@ -343,6 +372,10 @@ impl Machine {
             };
             let p = self.compiling.as_mut().unwrap();
             let target = p.body.len();
+            p.body.push(Op {
+                label: "THEN".to_string(),
+                kind: OpKind::Noop,
+            });
             match &mut p.body[idx].kind {
                 OpKind::Branch0(t) | OpKind::Jump(t) => *t = target,
                 _ => {}
@@ -352,6 +385,27 @@ impl Machine {
 
         let op = self.compile_token(token, upper);
         self.compiling.as_mut().unwrap().body.push(op);
+    }
+
+    fn handle_see(&mut self, token: &str) {
+        let upper = token.to_ascii_uppercase();
+        match self.dictionary.get(&upper).cloned() {
+            Some(Word::Primitive(p)) => {
+                self.output
+                    .push(format!("SEE {}: primitive {:?}", upper, p));
+            }
+            Some(Word::User(ops)) => {
+                let body = ops
+                    .iter()
+                    .map(|op| op.label.clone())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                self.output.push(format!(": {} {} ;", upper, body));
+            }
+            None => {
+                self.output.push(format!("SEE: unknown word {}", token));
+            }
+        }
     }
 
     fn compile_token(&self, token: &str, upper: &str) -> Op {
@@ -447,6 +501,9 @@ impl Machine {
                 frames.last_mut().unwrap().pc = *target;
                 self.emit_trace(&op.label);
             }
+            OpKind::Noop => {
+                self.emit_trace(&op.label);
+            }
         }
     }
 
@@ -468,6 +525,9 @@ impl Machine {
             PrimitiveId::Dot => self.prim_dot(),
             PrimitiveId::DotS => self.prim_dot_s(),
             PrimitiveId::Clear => self.prim_clear(),
+            PrimitiveId::ToR => self.prim_to_r(),
+            PrimitiveId::FromR => self.prim_r_from(),
+            PrimitiveId::RFetch => self.prim_r_fetch(),
         }
     }
 
@@ -637,6 +697,45 @@ impl Machine {
                 self.output.push(format!("{} {} < -> {}", a, b, flag));
             }
             _ => self.output.push("<: need two ints".to_string()),
+        }
+    }
+
+    fn prim_to_r(&mut self) {
+        match self.stack.pop() {
+            Some(v) => {
+                let label = match &v {
+                    Value::Int(n) => n.to_string(),
+                };
+                self.return_stack.push(v);
+                self.output.push(format!(">R {}", label));
+            }
+            None => self.output.push(">R: stack empty".to_string()),
+        }
+    }
+
+    fn prim_r_from(&mut self) {
+        match self.return_stack.pop() {
+            Some(v) => {
+                let label = match &v {
+                    Value::Int(n) => n.to_string(),
+                };
+                self.stack.push(v);
+                self.output.push(format!("R> {}", label));
+            }
+            None => self.output.push("R>: return stack empty".to_string()),
+        }
+    }
+
+    fn prim_r_fetch(&mut self) {
+        match self.return_stack.last().cloned() {
+            Some(v) => {
+                let label = match &v {
+                    Value::Int(n) => n.to_string(),
+                };
+                self.stack.push(v);
+                self.output.push(format!("R@ {}", label));
+            }
+            None => self.output.push("R@: return stack empty".to_string()),
         }
     }
 
