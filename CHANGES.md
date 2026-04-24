@@ -2,6 +2,14 @@
 
 ## 2026-04-24
 
+### Documentation
+
+- README: add live-demo link (<https://sw-vibe-coding.github.io/sw-fth-wasm/>),
+  inline screenshot at `images/screenshot.png` (cache-busted via `?ts=`
+  query), up-to-date vocabulary summary, and a standard epilog (Related
+  Repositories, Links, Copyright, License) matching the rest of the
+  Software Wrighter ecosystem
+
 ### Deployment
 
 - GitHub Pages workflow (`.github/workflows/pages.yml`): on push to `main`,
