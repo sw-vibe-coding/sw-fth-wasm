@@ -1,0 +1,71 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Cache cargo + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+
+      - name: Install wasm-bindgen-cli
+        run: |
+          if ! command -v wasm-bindgen >/dev/null; then
+            cargo install wasm-bindgen-cli --locked --version ^0.2
+          fi
+
+      - name: Build WASM
+        run: bash scripts/build.sh
+
+      - name: Inject build info
+        run: |
+          short_sha="${GITHUB_SHA:0:7}"
+          ts="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          host="github-actions"
+          sed -i \
+            -e "s|__BUILD_SHA__|$short_sha|g" \
+            -e "s|__BUILD_HOST__|$host|g" \
+            -e "s|__BUILD_TIMESTAMP__|$ts|g" \
+            web/index.html
+
+      - name: Ensure .nojekyll
+        run: touch web/.nojekyll
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./web
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

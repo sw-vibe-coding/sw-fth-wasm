@@ -2,6 +2,20 @@
 
 ## 2026-04-24
 
+### Deployment
+
+- GitHub Pages workflow (`.github/workflows/pages.yml`): on push to `main`,
+  installs the `wasm32-unknown-unknown` target, caches cargo + `target/`,
+  installs `wasm-bindgen-cli`, runs `scripts/build.sh`, substitutes build-info
+  placeholders in `web/index.html`, writes `web/.nojekyll`, and deploys `web/`
+  via `actions/deploy-pages@v4`
+- Page footer: MIT license, copyright, Blog / Discord / YouTube / Changes
+  links, and a build-info span (host · short SHA · UTC timestamp) injected at
+  deploy time; `main.js` falls back to `dev` when the placeholders are
+  unsubstituted (local preview)
+- GitHub corner SVG links to the repo from the top-right of every page
+- Add `LICENSE` (MIT) and `CHANGES.md` (this file)
+
 ### Language features
 
 - Counted loops: `DO … LOOP` with `I` primitive (current index); `ALLOT` for
