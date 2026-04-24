@@ -30,6 +30,10 @@ enum PrimitiveId {
     Fetch,
     Store,
     PlusStore,
+    Words,
+    Cr,
+    Emit,
+    Space,
 }
 
 #[derive(Clone, Debug)]
@@ -83,6 +87,7 @@ pub struct Machine {
     return_stack: Vec<Value>,
     memory: Vec<Value>,
     output: Vec<String>,
+    output_line: String,
     history: Vec<String>,
     trace: Vec<String>,
     dictionary: HashMap<String, Word>,
@@ -100,10 +105,11 @@ impl Machine {
             memory: Vec::new(),
             output: vec![
                 "Machine created.".to_string(),
-                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD = < > . .S CLEAR >R R> R@ @ ! +!".to_string(),
-                "Compile: : ; IF ELSE THEN BEGIN UNTIL".to_string(),
+                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD = < > . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE".to_string(),
+                "Compile: : ; IF ELSE THEN BEGIN UNTIL WHILE REPEAT".to_string(),
                 "Interactive: SEE <word> | VARIABLE <name> | <val> CONSTANT <name>".to_string(),
             ],
+            output_line: String::new(),
             history: Vec::new(),
             trace: Vec::new(),
             dictionary: HashMap::new(),
@@ -119,6 +125,7 @@ impl Machine {
         self.return_stack.clear();
         self.compiling = None;
         self.next_consumer = None;
+        self.output_line.clear();
         self.output.push("VM reset.".to_string());
         self.history.push("--- reset ---".to_string());
         self.trace.push("--- reset ---".to_string());
@@ -163,7 +170,14 @@ impl Machine {
     }
 
     pub fn get_output_text(&self) -> String {
-        self.output.join("\n")
+        let mut text = self.output.join("\n");
+        if !self.output_line.is_empty() {
+            if !text.is_empty() {
+                text.push('\n');
+            }
+            text.push_str(&self.output_line);
+        }
+        text
     }
 
     pub fn get_history_text(&self) -> String {
@@ -206,6 +220,10 @@ impl Machine {
             ("@", PrimitiveId::Fetch),
             ("!", PrimitiveId::Store),
             ("+!", PrimitiveId::PlusStore),
+            ("WORDS", PrimitiveId::Words),
+            ("CR", PrimitiveId::Cr),
+            ("EMIT", PrimitiveId::Emit),
+            ("SPACE", PrimitiveId::Space),
         ];
         for (name, id) in entries {
             self.dictionary
@@ -401,6 +419,50 @@ impl Machine {
                 kind: OpKind::Noop,
             });
             p.cf_stack.push(idx);
+            return;
+        }
+
+        if upper == "WHILE" {
+            let p = self.compiling.as_mut().unwrap();
+            let idx = p.body.len();
+            p.body.push(Op {
+                label: "WHILE".to_string(),
+                kind: OpKind::Branch0(0),
+            });
+            p.cf_stack.push(idx);
+            return;
+        }
+
+        if upper == "REPEAT" {
+            let (while_idx, begin_idx) = {
+                let cf = &mut self.compiling.as_mut().unwrap().cf_stack;
+                let w = match cf.pop() {
+                    Some(i) => i,
+                    None => {
+                        self.output.push("compile: REPEAT without WHILE".to_string());
+                        return;
+                    }
+                };
+                let b = match cf.pop() {
+                    Some(i) => i,
+                    None => {
+                        self.output.push("compile: REPEAT without BEGIN".to_string());
+                        // push WHILE idx back so '; ' sees unbalanced state
+                        cf.push(w);
+                        return;
+                    }
+                };
+                (w, b)
+            };
+            let p = self.compiling.as_mut().unwrap();
+            p.body.push(Op {
+                label: "REPEAT".to_string(),
+                kind: OpKind::Jump(begin_idx),
+            });
+            let target = p.body.len();
+            if let OpKind::Branch0(t) = &mut p.body[while_idx].kind {
+                *t = target;
+            }
             return;
         }
 
@@ -613,6 +675,10 @@ impl Machine {
             PrimitiveId::Fetch => self.prim_fetch(),
             PrimitiveId::Store => self.prim_store(),
             PrimitiveId::PlusStore => self.prim_plus_store(),
+            PrimitiveId::Words => self.prim_words(),
+            PrimitiveId::Cr => self.prim_cr(),
+            PrimitiveId::Emit => self.prim_emit(),
+            PrimitiveId::Space => self.prim_space(),
         }
     }
 
@@ -865,6 +931,31 @@ impl Machine {
             },
             _ => self.output.push("+!: need delta and addr".to_string()),
         }
+    }
+
+    fn prim_words(&mut self) {
+        let mut names: Vec<_> = self.dictionary.keys().cloned().collect();
+        names.sort();
+        self.output.push(format!("WORDS: {}", names.join(" ")));
+    }
+
+    fn prim_cr(&mut self) {
+        let line = std::mem::take(&mut self.output_line);
+        self.output.push(line);
+    }
+
+    fn prim_emit(&mut self) {
+        match self.pop_int() {
+            Some(n) => {
+                let c = std::char::from_u32(n as u32).unwrap_or('?');
+                self.output_line.push(c);
+            }
+            None => self.output.push("EMIT: stack empty".to_string()),
+        }
+    }
+
+    fn prim_space(&mut self) {
+        self.output_line.push(' ');
     }
 
     fn addr_to_index(&self, addr: i32) -> Option<usize> {
