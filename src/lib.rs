@@ -38,6 +38,9 @@ enum PrimitiveId {
     J,
     Allot,
     Execute,
+    Here,
+    Comma,
+    Latest,
 }
 
 #[derive(Clone, Debug)]
@@ -102,6 +105,7 @@ pub struct Machine {
     history: Vec<String>,
     trace: Vec<String>,
     dictionary: HashMap<String, Word>,
+    latest: Option<String>,
     compiling: Option<Pending>,
     next_consumer: Option<NextTokenConsumer>,
 }
@@ -117,7 +121,7 @@ impl Machine {
             xt_table: Vec::new(),
             output: vec![
                 "Machine created.".to_string(),
-                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD = < > . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE".to_string(),
+                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD = < > . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , LATEST".to_string(),
                 "Compile: : ; IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO LOOP +LOOP LEAVE".to_string(),
                 "Interactive: SEE <word> | VARIABLE <name> | <val> CONSTANT <name> | ' <word>".to_string(),
             ],
@@ -125,6 +129,7 @@ impl Machine {
             history: Vec::new(),
             trace: Vec::new(),
             dictionary: HashMap::new(),
+            latest: None,
             compiling: None,
             next_consumer: None,
         };
@@ -253,11 +258,18 @@ impl Machine {
             ("J", PrimitiveId::J),
             ("ALLOT", PrimitiveId::Allot),
             ("EXECUTE", PrimitiveId::Execute),
+            ("HERE", PrimitiveId::Here),
+            (",", PrimitiveId::Comma),
+            ("LATEST", PrimitiveId::Latest),
         ];
         for (name, id) in entries {
-            self.dictionary
-                .insert((*name).to_string(), Word::Primitive(*id));
+            self.define_word((*name).to_string(), Word::Primitive(*id));
         }
+    }
+
+    fn define_word(&mut self, name: String, word: Word) {
+        self.dictionary.insert(name.clone(), word);
+        self.latest = Some(name);
     }
 
     fn dispatch_token(&mut self, token: &str) {
@@ -355,15 +367,13 @@ impl Machine {
                 let name = token.to_ascii_uppercase();
                 let addr = self.memory.len() as i32;
                 self.memory.push(Value::Int(0));
-                self.dictionary
-                    .insert(name.clone(), Word::Variable(addr));
+                self.define_word(name.clone(), Word::Variable(addr));
                 self.output
                     .push(format!("VARIABLE {} at addr {}", name, addr));
             }
             NextTokenConsumer::Constant(v) => {
                 let name = token.to_ascii_uppercase();
-                self.dictionary
-                    .insert(name.clone(), Word::Constant(v));
+                self.define_word(name.clone(), Word::Constant(v));
                 self.output.push(format!("CONSTANT {} = {}", name, v));
             }
             NextTokenConsumer::Tick => {
@@ -425,8 +435,7 @@ impl Machine {
             }
             let name = done.name.unwrap();
             let body_len = done.body.len();
-            self.dictionary
-                .insert(name.clone(), Word::User(done.body));
+            self.define_word(name.clone(), Word::User(done.body));
             self.output
                 .push(format!("defined {} ({} tokens)", name, body_len));
             return;
@@ -892,6 +901,9 @@ impl Machine {
             PrimitiveId::J => self.prim_j(),
             PrimitiveId::Allot => self.prim_allot(),
             PrimitiveId::Execute => self.prim_execute(),
+            PrimitiveId::Here => self.prim_here(),
+            PrimitiveId::Comma => self.prim_comma(),
+            PrimitiveId::Latest => self.prim_latest(),
         }
     }
 
@@ -1137,6 +1149,30 @@ impl Machine {
             return;
         }
         self.stack.push(self.return_stack[len - 3].clone());
+    }
+
+    fn prim_here(&mut self) {
+        self.stack.push(Value::Int(self.memory.len() as i32));
+    }
+
+    fn prim_comma(&mut self) {
+        match self.pop_int() {
+            Some(n) => self.memory.push(Value::Int(n)),
+            None => self.output.push(",: stack empty".to_string()),
+        }
+    }
+
+    fn prim_latest(&mut self) {
+        let name = match &self.latest {
+            Some(n) => n.clone(),
+            None => {
+                self.output
+                    .push("LATEST: no words defined".to_string());
+                return;
+            }
+        };
+        let xt = self.intern_xt(&name);
+        self.stack.push(Value::Int(xt));
     }
 
     fn prim_execute(&mut self) {

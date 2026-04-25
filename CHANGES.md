@@ -2,6 +2,18 @@
 
 ## 2026-04-24
 
+### Language features
+
+- `HERE`, `,` (comma), `LATEST` self-hosting primitives:
+  `HERE` pushes the next free memory cell index (== `memory.len()`).
+  `,` pops a value and appends it to memory, so `42 ,` is a
+  one-cell allocator. `LATEST` pushes the xt of the most-recently
+  defined word — primitives count, so a fresh machine yields the xt
+  of `LATEST` itself; defining a colon word, variable, or constant
+  updates it. New `define_word` helper centralises dictionary inserts
+  and the `latest` field update; primitives, `;`-finalize, `VARIABLE`,
+  and `CONSTANT` all flow through it
+
 ### Documentation
 
 - README screenshot refreshed against the deployed site after the tick +
