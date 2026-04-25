@@ -33,10 +33,24 @@ const STORAGE_KEY_REPL = "sw-fth-wasm:repl";
 function restoreFromStorage(el, key) {
   try {
     const v = window.localStorage.getItem(key);
-    if (v !== null) el.value = v;
+    if (v !== null) {
+      el.value = v;
+      return true;
+    }
   } catch (_) {
     // localStorage unavailable (private browsing, sandboxed iframe) — ignore
   }
+  return false;
+}
+
+async function loadBootstrap() {
+  try {
+    const resp = await fetch("./forth-bootstrap.fs");
+    if (resp.ok) return await resp.text();
+  } catch (_) {
+    // Fetch failed (e.g., offline) — proceed without bootstrap.
+  }
+  return "";
 }
 
 function persistOnInput(el, key) {
@@ -54,13 +68,23 @@ async function main() {
 
   const repl = document.getElementById("repl");
   const sourcePane = document.getElementById("sourcePane");
-  restoreFromStorage(sourcePane, STORAGE_KEY_SOURCE);
+  const sourceRestored = restoreFromStorage(sourcePane, STORAGE_KEY_SOURCE);
   restoreFromStorage(repl, STORAGE_KEY_REPL);
   persistOnInput(sourcePane, STORAGE_KEY_SOURCE);
   persistOnInput(repl, STORAGE_KEY_REPL);
 
-  await init();
+  // Fetch bootstrap source in parallel with WASM init
+  const [bootstrap] = await Promise.all([loadBootstrap(), init()]);
   machine = new Machine();
+  if (bootstrap) {
+    machine.load_source(bootstrap);
+  }
+  if (!sourceRestored && bootstrap) {
+    sourcePane.value = bootstrap;
+    try {
+      window.localStorage.setItem(STORAGE_KEY_SOURCE, bootstrap);
+    } catch (_) {}
+  }
   render();
 
   document.getElementById("runBtn").addEventListener("click", () => {

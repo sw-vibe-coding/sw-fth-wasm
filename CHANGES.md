@@ -10,9 +10,23 @@
 
 ### UI
 
+- `web/forth-bootstrap.fs`: a Forth-source kernel-extension file with
+  `NEGATE`, `ABS`, `0=`, `0<`, `NIP`, `TUCK`, `?DUP`, `*/`, `VAR`,
+  `CONST`. Auto-loaded on every page init, demonstrating that the
+  kernel's self-hosting primitives (`CREATE`, `DOES>`, `,`, etc.) are
+  enough to define ordinary Forth vocabulary in Forth. The Source pane
+  is pre-filled with this content on a fresh visit so users can read,
+  edit, and re-load it; saved Source content from a previous session
+  takes precedence
 - `SEE` now appends ` IMMEDIATE` to its output when the target word has been
   marked via the `IMMEDIATE` primitive, so compile-time-active words are
   visible at a glance
+
+### Language features
+
+- `\ ` (Forth-style line comment): `eval_repl` and `load_source` now
+  iterate per line and break out of token processing on a `\ ` token,
+  so comments in source files and REPL lines are skipped silently
 
 ### Language features
 

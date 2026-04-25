@@ -176,9 +176,13 @@ impl Machine {
         }
 
         self.history.push(format!("> {}", line));
-        let tokens: Vec<String> = line.split_whitespace().map(String::from).collect();
-        for token in tokens {
-            self.dispatch_token(&token);
+        for sub in line.lines() {
+            for token in sub.split_whitespace() {
+                if token == "\\" {
+                    break;
+                }
+                self.dispatch_token(token);
+            }
         }
         self.flush_output_line();
     }
@@ -190,9 +194,13 @@ impl Machine {
         }
 
         self.history.push("> [load source]".to_string());
-        let tokens: Vec<String> = src.split_whitespace().map(String::from).collect();
-        for token in tokens {
-            self.dispatch_token(&token);
+        for sub in src.lines() {
+            for token in sub.split_whitespace() {
+                if token == "\\" {
+                    break;
+                }
+                self.dispatch_token(token);
+            }
         }
         self.flush_output_line();
         self.output
