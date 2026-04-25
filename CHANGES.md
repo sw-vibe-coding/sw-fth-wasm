@@ -8,6 +8,12 @@
   History / Memory contents stay pinned to the latest line instead of stranding
   the reader at the top while new activity lands off-screen
 
+### UI
+
+- `SEE` now appends ` IMMEDIATE` to its output when the target word has been
+  marked via the `IMMEDIATE` primitive, so compile-time-active words are
+  visible at a glance
+
 ### Language features
 
 - `IMMEDIATE`, `[`, `]`, `LITERAL` — the gateway to user-extensible

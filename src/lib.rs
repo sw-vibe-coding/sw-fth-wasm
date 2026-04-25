@@ -666,10 +666,15 @@ impl Machine {
 
     fn handle_see(&mut self, token: &str) {
         let upper = token.to_ascii_uppercase();
+        let immediate_tag = if self.immediate_words.contains(&upper) {
+            " IMMEDIATE"
+        } else {
+            ""
+        };
         match self.dictionary.get(&upper).cloned() {
             Some(Word::Primitive(p)) => {
                 self.output
-                    .push(format!("SEE {}: primitive {:?}", upper, p));
+                    .push(format!("SEE {}: primitive {:?}{}", upper, p, immediate_tag));
             }
             Some(Word::User(ops)) => {
                 let body = ops
@@ -677,7 +682,8 @@ impl Machine {
                     .map(|op| op.label.clone())
                     .collect::<Vec<_>>()
                     .join(" ");
-                self.output.push(format!(": {} {} ;", upper, body));
+                self.output
+                    .push(format!(": {} {} ;{}", upper, body, immediate_tag));
             }
             Some(Word::Variable(addr)) => {
                 let cell = self
