@@ -16,6 +16,22 @@
 
 ### Language features
 
+- `CREATE` and `DOES>` — the Forth defining-word mechanism. `CREATE` is a
+  primitive that captures the current `HERE` as a data-field address and
+  defers the name to the next token (via a new `NextTokenConsumer::Create`
+  variant). `DOES>` compiles an `OpKind::Does` op; at run time that op
+  captures the remainder of the currently-executing frame into
+  `Machine.pending_does` and jumps the frame past the capture. The next
+  `CREATE`-consumed name picks up those ops as its `does_ops`. A new
+  `Word::Created { data_addr, does_ops }` handles both the basic
+  data-field-pushing behavior and the custom runtime action. Enables
+  defining words in Forth itself, e.g.:
+
+    : MY-CONST CREATE , DOES> @ ;
+    7 MY-CONST SEVEN   SEVEN .    -> 7
+
+  `SEE` renders `Word::Created` as `created @ addr N` (plus `does [ ... ]`
+  if set) so the new entries stay introspectable
 - `IMMEDIATE`, `[`, `]`, `LITERAL` — the gateway to user-extensible
   compiler words. `IMMEDIATE` marks `LATEST` as immediate (tracked in a
   new `immediate_words: HashSet<String>`). When an immediate-flagged

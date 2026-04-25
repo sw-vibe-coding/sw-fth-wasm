@@ -42,6 +42,7 @@ enum PrimitiveId {
     Comma,
     Latest,
     Immediate,
+    Create,
 }
 
 #[derive(Clone, Debug)]
@@ -50,6 +51,10 @@ enum Word {
     User(Vec<Op>),
     Variable(i32),
     Constant(i32),
+    Created {
+        data_addr: i32,
+        does_ops: Option<Vec<Op>>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -58,6 +63,7 @@ enum NextTokenConsumer {
     Variable,
     Constant(i32),
     Tick,
+    Create(i32),
 }
 
 #[derive(Clone, Debug)]
@@ -78,6 +84,7 @@ enum OpKind {
     LoopNext(usize),
     LoopNextStep(usize),
     LeaveLoop(usize),
+    Does,
 }
 
 #[derive(Clone, Debug)]
@@ -111,6 +118,7 @@ pub struct Machine {
     compiling: Option<Pending>,
     paused_compile: Option<Pending>,
     next_consumer: Option<NextTokenConsumer>,
+    pending_does: Option<Vec<Op>>,
 }
 
 #[wasm_bindgen]
@@ -124,8 +132,8 @@ impl Machine {
             xt_table: Vec::new(),
             output: vec![
                 "Machine created.".to_string(),
-                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD = < > . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , LATEST IMMEDIATE".to_string(),
-                "Compile: : ; IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO LOOP +LOOP LEAVE [ ] LITERAL".to_string(),
+                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD = < > . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , LATEST IMMEDIATE CREATE".to_string(),
+                "Compile: : ; IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO LOOP +LOOP LEAVE [ ] LITERAL DOES>".to_string(),
                 "Interactive: SEE <word> | VARIABLE <name> | <val> CONSTANT <name> | ' <word>".to_string(),
             ],
             output_line: String::new(),
@@ -137,6 +145,7 @@ impl Machine {
             compiling: None,
             paused_compile: None,
             next_consumer: None,
+            pending_does: None,
         };
         m.install_primitives();
         m
@@ -148,6 +157,7 @@ impl Machine {
         self.compiling = None;
         self.paused_compile = None;
         self.next_consumer = None;
+        self.pending_does = None;
         self.output_line.clear();
         self.output.push("VM reset.".to_string());
         self.history.push("--- reset ---".to_string());
@@ -268,6 +278,7 @@ impl Machine {
             (",", PrimitiveId::Comma),
             ("LATEST", PrimitiveId::Latest),
             ("IMMEDIATE", PrimitiveId::Immediate),
+            ("CREATE", PrimitiveId::Create),
         ];
         for (name, id) in entries {
             self.define_word((*name).to_string(), Word::Primitive(*id));
@@ -325,6 +336,12 @@ impl Machine {
             return;
         }
 
+        if upper == "DOES>" {
+            self.output
+                .push("DOES>: only valid inside : ... ;".to_string());
+            return;
+        }
+
         if upper == "SEE" {
             self.next_consumer = Some(NextTokenConsumer::See);
             return;
@@ -371,6 +388,12 @@ impl Machine {
             Some(Word::Constant(v)) => {
                 self.stack.push(Value::Int(v));
             }
+            Some(Word::Created { data_addr, does_ops }) => {
+                self.stack.push(Value::Int(data_addr));
+                if let Some(ops) = does_ops {
+                    self.run_user(&upper, ops);
+                }
+            }
             None => self.output.push(format!("unknown token: {}", token)),
         }
     }
@@ -390,6 +413,24 @@ impl Machine {
                 let name = token.to_ascii_uppercase();
                 self.define_word(name.clone(), Word::Constant(v));
                 self.output.push(format!("CONSTANT {} = {}", name, v));
+            }
+            NextTokenConsumer::Create(data_addr) => {
+                let name = token.to_ascii_uppercase();
+                let does_ops = self.pending_does.take();
+                let has_does = does_ops.is_some();
+                self.define_word(
+                    name.clone(),
+                    Word::Created { data_addr, does_ops },
+                );
+                if has_does {
+                    self.output.push(format!(
+                        "CREATE {} at addr {} (with DOES>)",
+                        name, data_addr
+                    ));
+                } else {
+                    self.output
+                        .push(format!("CREATE {} at addr {}", name, data_addr));
+                }
             }
             NextTokenConsumer::Tick => {
                 let upper = token.to_ascii_uppercase();
@@ -508,6 +549,15 @@ impl Machine {
 
         if upper == "[" {
             self.paused_compile = self.compiling.take();
+            return;
+        }
+
+        if upper == "DOES>" {
+            let p = self.compiling.as_mut().unwrap();
+            p.body.push(Op {
+                label: "DOES>".to_string(),
+                kind: OpKind::Does,
+            });
             return;
         }
 
@@ -655,6 +705,12 @@ impl Machine {
                     Word::User(ops) => self.run_user(upper, ops),
                     Word::Variable(addr) => self.stack.push(Value::Int(addr)),
                     Word::Constant(v) => self.stack.push(Value::Int(v)),
+                    Word::Created { data_addr, does_ops } => {
+                        self.stack.push(Value::Int(data_addr));
+                        if let Some(ops) = does_ops {
+                            self.run_user(upper, ops);
+                        }
+                    }
                 }
                 return;
             }
@@ -692,13 +748,32 @@ impl Machine {
                         Value::Int(n) => n.to_string(),
                     })
                     .unwrap_or_else(|| "?".to_string());
-                self.output
-                    .push(format!("SEE {}: variable @ addr {} = {}", upper, addr, cell));
+                self.output.push(format!(
+                    "SEE {}: variable @ addr {} = {}{}",
+                    upper, addr, cell, immediate_tag
+                ));
             }
             Some(Word::Constant(v)) => {
                 self.output
-                    .push(format!("SEE {}: constant = {}", upper, v));
+                    .push(format!("SEE {}: constant = {}{}", upper, v, immediate_tag));
             }
+            Some(Word::Created { data_addr, does_ops }) => match does_ops {
+                Some(ops) => {
+                    let body = ops
+                        .iter()
+                        .map(|op| op.label.clone())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    self.output.push(format!(
+                        "SEE {}: created @ addr {}, does [ {} ]{}",
+                        upper, data_addr, body, immediate_tag
+                    ));
+                }
+                None => self.output.push(format!(
+                    "SEE {}: created @ addr {}{}",
+                    upper, data_addr, immediate_tag
+                )),
+            },
             None => {
                 self.output.push(format!("SEE: unknown word {}", token));
             }
@@ -820,6 +895,17 @@ impl Machine {
                     self.stack.push(Value::Int(v));
                     self.emit_trace(&op.label);
                 }
+                Some(Word::Created { data_addr, does_ops }) => {
+                    self.stack.push(Value::Int(data_addr));
+                    self.emit_trace(&op.label);
+                    if let Some(inner) = does_ops {
+                        frames.push(Frame {
+                            ops: inner,
+                            pc: 0,
+                            return_label: None,
+                        });
+                    }
+                }
                 None => {
                     self.output.push(format!("unknown token: {}", name));
                     self.emit_trace(&op.label);
@@ -922,6 +1008,16 @@ impl Machine {
                 frames.last_mut().unwrap().pc = *target;
                 self.emit_trace(&op.label);
             }
+            OpKind::Does => {
+                let remaining: Vec<Op> = {
+                    let frame = frames.last_mut().unwrap();
+                    let r = frame.ops[frame.pc..].to_vec();
+                    frame.pc = frame.ops.len();
+                    r
+                };
+                self.pending_does = Some(remaining);
+                self.emit_trace(&op.label);
+            }
         }
     }
 
@@ -961,6 +1057,7 @@ impl Machine {
             PrimitiveId::Comma => self.prim_comma(),
             PrimitiveId::Latest => self.prim_latest(),
             PrimitiveId::Immediate => self.prim_immediate(),
+            PrimitiveId::Create => self.prim_create(),
         }
     }
 
@@ -1244,6 +1341,11 @@ impl Machine {
         }
     }
 
+    fn prim_create(&mut self) {
+        let addr = self.memory.len() as i32;
+        self.next_consumer = Some(NextTokenConsumer::Create(addr));
+    }
+
     fn prim_execute(&mut self) {
         let xt = match self.pop_int() {
             Some(n) => n,
@@ -1263,6 +1365,12 @@ impl Machine {
             Some(Word::User(ops)) => self.run_user(&name, ops),
             Some(Word::Variable(addr)) => self.stack.push(Value::Int(addr)),
             Some(Word::Constant(v)) => self.stack.push(Value::Int(v)),
+            Some(Word::Created { data_addr, does_ops }) => {
+                self.stack.push(Value::Int(data_addr));
+                if let Some(ops) = does_ops {
+                    self.run_user(&name, ops);
+                }
+            }
             None => self
                 .output
                 .push(format!("EXECUTE: word {} no longer defined", name)),
