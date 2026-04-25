@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use wasm_bindgen::prelude::*;
 
 #[derive(Clone, Debug)]
@@ -41,6 +41,7 @@ enum PrimitiveId {
     Here,
     Comma,
     Latest,
+    Immediate,
 }
 
 #[derive(Clone, Debug)]
@@ -105,8 +106,10 @@ pub struct Machine {
     history: Vec<String>,
     trace: Vec<String>,
     dictionary: HashMap<String, Word>,
+    immediate_words: HashSet<String>,
     latest: Option<String>,
     compiling: Option<Pending>,
+    paused_compile: Option<Pending>,
     next_consumer: Option<NextTokenConsumer>,
 }
 
@@ -121,16 +124,18 @@ impl Machine {
             xt_table: Vec::new(),
             output: vec![
                 "Machine created.".to_string(),
-                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD = < > . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , LATEST".to_string(),
-                "Compile: : ; IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO LOOP +LOOP LEAVE".to_string(),
+                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD = < > . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , LATEST IMMEDIATE".to_string(),
+                "Compile: : ; IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO LOOP +LOOP LEAVE [ ] LITERAL".to_string(),
                 "Interactive: SEE <word> | VARIABLE <name> | <val> CONSTANT <name> | ' <word>".to_string(),
             ],
             output_line: String::new(),
             history: Vec::new(),
             trace: Vec::new(),
             dictionary: HashMap::new(),
+            immediate_words: HashSet::new(),
             latest: None,
             compiling: None,
+            paused_compile: None,
             next_consumer: None,
         };
         m.install_primitives();
@@ -141,6 +146,7 @@ impl Machine {
         self.stack.clear();
         self.return_stack.clear();
         self.compiling = None;
+        self.paused_compile = None;
         self.next_consumer = None;
         self.output_line.clear();
         self.output.push("VM reset.".to_string());
@@ -261,6 +267,7 @@ impl Machine {
             ("HERE", PrimitiveId::Here),
             (",", PrimitiveId::Comma),
             ("LATEST", PrimitiveId::Latest),
+            ("IMMEDIATE", PrimitiveId::Immediate),
         ];
         for (name, id) in entries {
             self.define_word((*name).to_string(), Word::Primitive(*id));
@@ -307,6 +314,14 @@ impl Machine {
 
         if self.compiling.is_some() {
             self.dispatch_compile(token, &upper);
+            return;
+        }
+
+        if upper == "]" {
+            match self.paused_compile.take() {
+                Some(p) => self.compiling = Some(p),
+                None => self.output.push("]: not paused".to_string()),
+            }
             return;
         }
 
@@ -491,6 +506,27 @@ impl Machine {
             return;
         }
 
+        if upper == "[" {
+            self.paused_compile = self.compiling.take();
+            return;
+        }
+
+        if upper == "LITERAL" {
+            let n = match self.pop_int() {
+                Some(n) => n,
+                None => {
+                    self.output.push("LITERAL: stack empty".to_string());
+                    return;
+                }
+            };
+            let p = self.compiling.as_mut().unwrap();
+            p.body.push(Op {
+                label: n.to_string(),
+                kind: OpKind::PushInt(n),
+            });
+            return;
+        }
+
         if upper == "DO" {
             let p = self.compiling.as_mut().unwrap();
             let idx = p.body.len();
@@ -608,6 +644,20 @@ impl Machine {
                 _ => {}
             }
             return;
+        }
+
+        // Immediate words execute inline at compile time instead of being
+        // compiled into the body — the Forth way to extend the compiler.
+        if self.immediate_words.contains(upper) {
+            if let Some(word) = self.dictionary.get(upper).cloned() {
+                match word {
+                    Word::Primitive(p) => self.execute_primitive(p),
+                    Word::User(ops) => self.run_user(upper, ops),
+                    Word::Variable(addr) => self.stack.push(Value::Int(addr)),
+                    Word::Constant(v) => self.stack.push(Value::Int(v)),
+                }
+                return;
+            }
         }
 
         let op = self.compile_token(token, upper);
@@ -904,6 +954,7 @@ impl Machine {
             PrimitiveId::Here => self.prim_here(),
             PrimitiveId::Comma => self.prim_comma(),
             PrimitiveId::Latest => self.prim_latest(),
+            PrimitiveId::Immediate => self.prim_immediate(),
         }
     }
 
@@ -1173,6 +1224,18 @@ impl Machine {
         };
         let xt = self.intern_xt(&name);
         self.stack.push(Value::Int(xt));
+    }
+
+    fn prim_immediate(&mut self) {
+        match &self.latest {
+            Some(name) => {
+                let name = name.clone();
+                self.immediate_words.insert(name);
+            }
+            None => self
+                .output
+                .push("IMMEDIATE: no words defined".to_string()),
+        }
     }
 
     fn prim_execute(&mut self) {

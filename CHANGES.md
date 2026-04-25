@@ -10,6 +10,16 @@
 
 ### Language features
 
+- `IMMEDIATE`, `[`, `]`, `LITERAL` — the gateway to user-extensible
+  compiler words. `IMMEDIATE` marks `LATEST` as immediate (tracked in a
+  new `immediate_words: HashSet<String>`). When an immediate-flagged
+  word is seen during compilation, `dispatch_compile` executes it inline
+  instead of emitting `CallByName`, so user-defined compile helpers
+  work the same as built-ins. `[` pauses the current definition into
+  `paused_compile: Option<Pending>` and drops out to interpret mode;
+  `]` pops that back into `compiling`. `LITERAL` pops the data stack
+  and emits a `PushInt` op into the in-progress body, enabling the
+  classic `: FIVE [ 2 3 + ] LITERAL ;` compile-time-constant idiom
 - `HERE`, `,` (comma), `LATEST` self-hosting primitives:
   `HERE` pushes the next free memory cell index (== `memory.len()`).
   `,` pops a value and appends it to memory, so `42 ,` is a
