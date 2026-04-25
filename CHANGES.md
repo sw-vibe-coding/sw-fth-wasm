@@ -38,6 +38,8 @@
 
 ### Documentation
 
+- README screenshot refreshed after HERE/,/LATEST, IMMEDIATE/[ ]/LITERAL,
+  and SEE-immediate annotation landed; bumped cache-buster again
 - README screenshot refreshed against the deployed site after the tick +
   EXECUTE and localStorage commits landed; bumped the `?ts=` cache-buster
 
