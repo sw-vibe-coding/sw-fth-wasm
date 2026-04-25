@@ -35,6 +35,7 @@ enum PrimitiveId {
     Emit,
     Space,
     I,
+    J,
     Allot,
 }
 
@@ -69,6 +70,8 @@ enum OpKind {
     Noop,
     LoopEnter,
     LoopNext(usize),
+    LoopNextStep(usize),
+    LeaveLoop(usize),
 }
 
 #[derive(Clone, Debug)]
@@ -76,6 +79,7 @@ struct Pending {
     name: Option<String>,
     body: Vec<Op>,
     cf_stack: Vec<usize>,
+    leave_stack: Vec<Vec<usize>>,
 }
 
 #[derive(Clone, Debug)]
@@ -109,8 +113,8 @@ impl Machine {
             memory: Vec::new(),
             output: vec![
                 "Machine created.".to_string(),
-                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD = < > . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I ALLOT".to_string(),
-                "Compile: : ; IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO LOOP".to_string(),
+                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD = < > . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT".to_string(),
+                "Compile: : ; IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO LOOP +LOOP LEAVE".to_string(),
                 "Interactive: SEE <word> | VARIABLE <name> | <val> CONSTANT <name>".to_string(),
             ],
             output_line: String::new(),
@@ -242,6 +246,7 @@ impl Machine {
             ("EMIT", PrimitiveId::Emit),
             ("SPACE", PrimitiveId::Space),
             ("I", PrimitiveId::I),
+            ("J", PrimitiveId::J),
             ("ALLOT", PrimitiveId::Allot),
         ];
         for (name, id) in entries {
@@ -304,6 +309,7 @@ impl Machine {
                 name: None,
                 body: Vec::new(),
                 cf_stack: Vec::new(),
+                leave_stack: Vec::new(),
             });
             return;
         }
@@ -446,23 +452,33 @@ impl Machine {
                 kind: OpKind::LoopEnter,
             });
             p.cf_stack.push(idx);
+            p.leave_stack.push(Vec::new());
             return;
         }
 
         if upper == "LOOP" {
-            let idx_do = match self.compiling.as_mut().unwrap().cf_stack.pop() {
-                Some(i) => i,
-                None => {
-                    self.output.push("compile: LOOP without DO".to_string());
-                    return;
-                }
-            };
+            self.close_do_loop("LOOP", false);
+            return;
+        }
+
+        if upper == "+LOOP" {
+            self.close_do_loop("+LOOP", true);
+            return;
+        }
+
+        if upper == "LEAVE" {
             let p = self.compiling.as_mut().unwrap();
-            let target = idx_do + 1;
+            if p.leave_stack.is_empty() {
+                self.output.push("compile: LEAVE without DO".to_string());
+                return;
+            }
+            let idx = p.body.len();
             p.body.push(Op {
-                label: "LOOP".to_string(),
-                kind: OpKind::LoopNext(target),
+                label: "LEAVE".to_string(),
+                kind: OpKind::LeaveLoop(0),
             });
+            let depth = p.leave_stack.len();
+            p.leave_stack[depth - 1].push(idx);
             return;
         }
 
@@ -582,6 +598,41 @@ impl Machine {
             }
             None => {
                 self.output.push(format!("SEE: unknown word {}", token));
+            }
+        }
+    }
+
+    fn close_do_loop(&mut self, label: &str, plus: bool) {
+        let idx_do = match self.compiling.as_mut().unwrap().cf_stack.pop() {
+            Some(i) => i,
+            None => {
+                self.output
+                    .push(format!("compile: {} without DO", label));
+                return;
+            }
+        };
+        let leaves = self
+            .compiling
+            .as_mut()
+            .unwrap()
+            .leave_stack
+            .pop()
+            .unwrap_or_default();
+        let p = self.compiling.as_mut().unwrap();
+        let target = idx_do + 1;
+        let kind = if plus {
+            OpKind::LoopNextStep(target)
+        } else {
+            OpKind::LoopNext(target)
+        };
+        p.body.push(Op {
+            label: label.to_string(),
+            kind,
+        });
+        let after = p.body.len();
+        for leave_idx in leaves {
+            if let OpKind::LeaveLoop(t) = &mut p.body[leave_idx].kind {
+                *t = after;
             }
         }
     }
@@ -723,6 +774,51 @@ impl Machine {
                 }
                 self.emit_trace(&op.label);
             }
+            OpKind::LoopNextStep(target) => {
+                let step = match self.pop_int() {
+                    Some(n) => n,
+                    None => {
+                        self.output.push("+LOOP: stack empty".to_string());
+                        self.emit_trace(&op.label);
+                        return;
+                    }
+                };
+                let len = self.return_stack.len();
+                if len < 2 {
+                    self.output.push("+LOOP: return stack underflow".to_string());
+                    self.emit_trace(&op.label);
+                    return;
+                }
+                let limit = match &self.return_stack[len - 2] {
+                    Value::Int(n) => *n,
+                };
+                let new_index = match &mut self.return_stack[len - 1] {
+                    Value::Int(n) => {
+                        *n += step;
+                        *n
+                    }
+                };
+                let exit = if step >= 0 {
+                    new_index >= limit
+                } else {
+                    new_index < limit
+                };
+                if exit {
+                    self.return_stack.pop();
+                    self.return_stack.pop();
+                } else {
+                    frames.last_mut().unwrap().pc = *target;
+                }
+                self.emit_trace(&op.label);
+            }
+            OpKind::LeaveLoop(target) => {
+                if self.return_stack.len() >= 2 {
+                    self.return_stack.pop();
+                    self.return_stack.pop();
+                }
+                frames.last_mut().unwrap().pc = *target;
+                self.emit_trace(&op.label);
+            }
         }
     }
 
@@ -755,6 +851,7 @@ impl Machine {
             PrimitiveId::Emit => self.prim_emit(),
             PrimitiveId::Space => self.prim_space(),
             PrimitiveId::I => self.prim_i(),
+            PrimitiveId::J => self.prim_j(),
             PrimitiveId::Allot => self.prim_allot(),
         }
     }
@@ -992,6 +1089,15 @@ impl Machine {
             Some(v) => self.stack.push(v),
             None => self.output.push("I: return stack empty".to_string()),
         }
+    }
+
+    fn prim_j(&mut self) {
+        let len = self.return_stack.len();
+        if len < 3 {
+            self.output.push("J: return stack too shallow".to_string());
+            return;
+        }
+        self.stack.push(self.return_stack[len - 3].clone());
     }
 
     fn prim_allot(&mut self) {

@@ -2,6 +2,17 @@
 
 ## 2026-04-24
 
+### Language features
+
+- `J` primitive: peek the outer DO loop's index (3rd from top of return stack)
+- `LEAVE`: jump out of the innermost DO loop early; pops the loop's
+  (limit, index) pair from the return stack so the outer flow stays balanced.
+  Compile-time tracking via a per-loop list of pending leave-jumps that
+  `LOOP` / `+LOOP` patch when they emit
+- `+LOOP`: counted loop with a step pulled from the data stack each
+  iteration. Exits when the step is non-negative and `index >= limit`, or
+  when the step is negative and `index < limit`
+
 ### Documentation
 
 - README screenshot refreshed against the live site after the Memory pane and
