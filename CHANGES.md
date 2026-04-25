@@ -12,7 +12,8 @@
 
 - `web/forth-bootstrap.fs`: a Forth-source kernel-extension file with
   `NEGATE`, `ABS`, `0=`, `0<`, `NIP`, `TUCK`, `?DUP`, `*/`, `VAR`,
-  `CONST`. Auto-loaded on every page init, demonstrating that the
+  `CONST`, each annotated with a stack-effect comment.
+  Auto-loaded on every page init, demonstrating that the
   kernel's self-hosting primitives (`CREATE`, `DOES>`, `,`, etc.) are
   enough to define ordinary Forth vocabulary in Forth. The Source pane
   is pre-filled with this content on a fresh visit so users can read,
@@ -24,6 +25,13 @@
 
 ### Language features
 
+- `( ... )` block comments: token processing now tracks `(`/`)` nesting
+  depth via a new `run_tokens` helper; tokens inside block comments are
+  skipped, and unmatched `)` or unclosed `(` produce diagnostic output
+- `/MOD` ( a b -- rem quot ) and `*/MOD` ( a b c -- rem quot ): composite
+  arithmetic primitives. `/MOD` returns both remainder and quotient in
+  one operation; `*/MOD` does the canonical Forth scaled-divide
+  (compute `a*b`, then divide by `c`, return both remainder and quotient)
 - `\ ` (Forth-style line comment): `eval_repl` and `load_source` now
   iterate per line and break out of token processing on a `\ ` token,
   so comments in source files and REPL lines are skipped silently

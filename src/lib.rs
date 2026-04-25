@@ -18,6 +18,8 @@ enum PrimitiveId {
     Mul,
     Div,
     Mod,
+    SlashMod,
+    StarSlashMod,
     Eq,
     Lt,
     Gt,
@@ -136,7 +138,7 @@ impl Machine {
             xt_table: Vec::new(),
             output: vec![
                 "Machine created.".to_string(),
-                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD = < > . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , LATEST IMMEDIATE CREATE".to_string(),
+                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD /MOD */MOD = < > . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , LATEST IMMEDIATE CREATE".to_string(),
                 "Compile: : ; :NONAME IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO LOOP +LOOP LEAVE [ ] LITERAL DOES> POSTPONE".to_string(),
                 "Interactive: SEE <word> | VARIABLE <name> | <val> CONSTANT <name> | ' <word>".to_string(),
             ],
@@ -176,14 +178,7 @@ impl Machine {
         }
 
         self.history.push(format!("> {}", line));
-        for sub in line.lines() {
-            for token in sub.split_whitespace() {
-                if token == "\\" {
-                    break;
-                }
-                self.dispatch_token(token);
-            }
-        }
+        self.run_tokens(line);
         self.flush_output_line();
     }
 
@@ -194,14 +189,7 @@ impl Machine {
         }
 
         self.history.push("> [load source]".to_string());
-        for sub in src.lines() {
-            for token in sub.split_whitespace() {
-                if token == "\\" {
-                    break;
-                }
-                self.dispatch_token(token);
-            }
-        }
+        self.run_tokens(src);
         self.flush_output_line();
         self.output
             .push(format!("Loaded source ({} chars).", src.len()));
@@ -255,6 +243,37 @@ impl Machine {
 }
 
 impl Machine {
+    fn run_tokens(&mut self, src: &str) {
+        let mut comment_depth: u32 = 0;
+        for sub in src.lines() {
+            for token in sub.split_whitespace() {
+                if token == "\\" {
+                    break;
+                }
+                if token == "(" {
+                    comment_depth += 1;
+                    continue;
+                }
+                if token == ")" {
+                    if comment_depth > 0 {
+                        comment_depth -= 1;
+                    } else {
+                        self.output.push("): unmatched".to_string());
+                    }
+                    continue;
+                }
+                if comment_depth > 0 {
+                    continue;
+                }
+                self.dispatch_token(token);
+            }
+        }
+        if comment_depth > 0 {
+            self.output
+                .push(format!("(: unclosed ({} open)", comment_depth));
+        }
+    }
+
     fn install_primitives(&mut self) {
         let entries: &[(&str, PrimitiveId)] = &[
             ("DUP", PrimitiveId::Dup),
@@ -267,6 +286,8 @@ impl Machine {
             ("*", PrimitiveId::Mul),
             ("/", PrimitiveId::Div),
             ("MOD", PrimitiveId::Mod),
+            ("/MOD", PrimitiveId::SlashMod),
+            ("*/MOD", PrimitiveId::StarSlashMod),
             ("=", PrimitiveId::Eq),
             ("<", PrimitiveId::Lt),
             (">", PrimitiveId::Gt),
@@ -1107,6 +1128,8 @@ impl Machine {
             PrimitiveId::Mul => self.prim_mul(),
             PrimitiveId::Div => self.prim_div(),
             PrimitiveId::Mod => self.prim_mod(),
+            PrimitiveId::SlashMod => self.prim_slash_mod(),
+            PrimitiveId::StarSlashMod => self.prim_star_slash_mod(),
             PrimitiveId::Eq => self.prim_eq(),
             PrimitiveId::Lt => self.prim_lt(),
             PrimitiveId::Gt => self.prim_gt(),
@@ -1191,6 +1214,46 @@ impl Machine {
                 None => self.output.push("MOD: divide by zero".to_string()),
             },
             _ => self.output.push("MOD: need two ints".to_string()),
+        }
+    }
+
+    fn prim_slash_mod(&mut self) {
+        let b = self.pop_int();
+        let a = self.pop_int();
+        match (a, b) {
+            (Some(a), Some(b)) => {
+                let r = a.checked_rem(b);
+                let q = a.checked_div(b);
+                match (r, q) {
+                    (Some(r), Some(q)) => {
+                        self.stack.push(Value::Int(r));
+                        self.stack.push(Value::Int(q));
+                    }
+                    _ => self.output.push("/MOD: divide by zero".to_string()),
+                }
+            }
+            _ => self.output.push("/MOD: need two ints".to_string()),
+        }
+    }
+
+    fn prim_star_slash_mod(&mut self) {
+        let c = self.pop_int();
+        let b = self.pop_int();
+        let a = self.pop_int();
+        match (a, b, c) {
+            (Some(a), Some(b), Some(c)) => {
+                let prod = a.wrapping_mul(b);
+                let r = prod.checked_rem(c);
+                let q = prod.checked_div(c);
+                match (r, q) {
+                    (Some(r), Some(q)) => {
+                        self.stack.push(Value::Int(r));
+                        self.stack.push(Value::Int(q));
+                    }
+                    _ => self.output.push("*/MOD: divide by zero".to_string()),
+                }
+            }
+            _ => self.output.push("*/MOD: need three ints".to_string()),
         }
     }
 

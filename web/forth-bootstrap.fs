@@ -5,13 +5,13 @@
 \
 \ Inspect any of these with `SEE <name>`; list everything with `WORDS`.
 
-: NEGATE 0 SWAP - ;
-: ABS DUP 0 < IF NEGATE THEN ;
-: 0= 0 = ;
-: 0< 0 < ;
-: NIP SWAP DROP ;
-: TUCK SWAP OVER ;
-: ?DUP DUP IF DUP THEN ;
-: */ * / ;
-: VAR CREATE 0 , ;
-: CONST CREATE , DOES> @ ;
+: NEGATE ( n -- -n )    0 SWAP - ;
+: ABS    ( n -- |n| )   DUP 0 < IF NEGATE THEN ;
+: 0=     ( n -- flag )  0 = ;
+: 0<     ( n -- flag )  0 < ;
+: NIP    ( a b -- b )   SWAP DROP ;
+: TUCK   ( a b -- b a b ) SWAP OVER ;
+: ?DUP   ( n -- n n | 0 )   DUP IF DUP THEN ;
+: */     ( a b c -- a*b/c ) * / ;
+: VAR    ( -- )  CREATE 0 , ;
+: CONST  ( n -- )  CREATE , DOES> @ ;
