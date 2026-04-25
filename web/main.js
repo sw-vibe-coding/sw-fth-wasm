@@ -3,12 +3,19 @@ import init, { Machine } from "./pkg/proto_forth_wasm.js";
 let machine = null;
 
 function render() {
-  document.getElementById("stackPane").value = machine.get_stack_text();
-  document.getElementById("dictPane").value = machine.get_dictionary_text();
-  document.getElementById("outputPane").value = machine.get_output_text();
-  document.getElementById("historyPane").value = machine.get_history_text();
-  document.getElementById("tracePane").value = machine.get_trace_text();
-  document.getElementById("memoryPane").value = machine.get_memory_text();
+  const panes = [
+    ["stackPane", machine.get_stack_text()],
+    ["dictPane", machine.get_dictionary_text()],
+    ["outputPane", machine.get_output_text()],
+    ["historyPane", machine.get_history_text()],
+    ["tracePane", machine.get_trace_text()],
+    ["memoryPane", machine.get_memory_text()],
+  ];
+  for (const [id, text] of panes) {
+    const el = document.getElementById(id);
+    el.value = text;
+    el.scrollTop = el.scrollHeight;
+  }
 }
 
 function substituteBuildInfo() {

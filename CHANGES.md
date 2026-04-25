@@ -2,6 +2,12 @@
 
 ## 2026-04-24
 
+### UI
+
+- Panes auto-scroll to the bottom on every render, so long Output / Trace /
+  History / Memory contents stay pinned to the latest line instead of stranding
+  the reader at the top while new activity lands off-screen
+
 ### Language features
 
 - `HERE`, `,` (comma), `LATEST` self-hosting primitives:
