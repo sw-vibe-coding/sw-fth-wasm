@@ -2,6 +2,14 @@
 
 ## 2026-04-24
 
+### UI
+
+- Source and REPL textareas persist across page reloads via
+  `localStorage` (keys `sw-fth-wasm:source` and `sw-fth-wasm:repl`).
+  Restored before WASM init so a saved program is visible immediately;
+  saved on each `input` event. Falls back silently if `localStorage` is
+  unavailable (private browsing, sandboxed iframes)
+
 ### Language features
 
 - Tick (`'`) and `EXECUTE`: `'` consumes the next token, looks the word up in
