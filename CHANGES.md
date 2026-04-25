@@ -2,6 +2,11 @@
 
 ## 2026-04-24
 
+### Documentation
+
+- README screenshot refreshed against the deployed site after the tick +
+  EXECUTE and localStorage commits landed; bumped the `?ts=` cache-buster
+
 ### UI
 
 - Source and REPL textareas persist across page reloads via
