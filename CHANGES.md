@@ -4,6 +4,14 @@
 
 ### Language features
 
+- Tick (`'`) and `EXECUTE`: `'` consumes the next token, looks the word up in
+  the dictionary, and either pushes its execution token (xt) to the data
+  stack (interpret mode) or compiles a literal-push of that xt into the
+  word's body (compile mode). `EXECUTE` pops an xt and runs that word.
+  xts are stable indices into a new `xt_table: Vec<String>`. Same `'` token
+  in either mode — the deferred `next_consumer` checks `compiling` at
+  consumption time. Supports `: APPLY-DUP ' DUP EXECUTE ;` and
+  `' SQUARE EXECUTE` patterns and round-trips through `SEE`
 - `J` primitive: peek the outer DO loop's index (3rd from top of return stack)
 - `LEAVE`: jump out of the innermost DO loop early; pops the loop's
   (limit, index) pair from the return stack so the outer flow stays balanced.

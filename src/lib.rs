@@ -37,6 +37,7 @@ enum PrimitiveId {
     I,
     J,
     Allot,
+    Execute,
 }
 
 #[derive(Clone, Debug)]
@@ -52,6 +53,7 @@ enum NextTokenConsumer {
     See,
     Variable,
     Constant(i32),
+    Tick,
 }
 
 #[derive(Clone, Debug)]
@@ -94,6 +96,7 @@ pub struct Machine {
     stack: Vec<Value>,
     return_stack: Vec<Value>,
     memory: Vec<Value>,
+    xt_table: Vec<String>,
     output: Vec<String>,
     output_line: String,
     history: Vec<String>,
@@ -111,11 +114,12 @@ impl Machine {
             stack: Vec::new(),
             return_stack: Vec::new(),
             memory: Vec::new(),
+            xt_table: Vec::new(),
             output: vec![
                 "Machine created.".to_string(),
-                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD = < > . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT".to_string(),
+                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD = < > . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE".to_string(),
                 "Compile: : ; IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO LOOP +LOOP LEAVE".to_string(),
-                "Interactive: SEE <word> | VARIABLE <name> | <val> CONSTANT <name>".to_string(),
+                "Interactive: SEE <word> | VARIABLE <name> | <val> CONSTANT <name> | ' <word>".to_string(),
             ],
             output_line: String::new(),
             history: Vec::new(),
@@ -248,6 +252,7 @@ impl Machine {
             ("I", PrimitiveId::I),
             ("J", PrimitiveId::J),
             ("ALLOT", PrimitiveId::Allot),
+            ("EXECUTE", PrimitiveId::Execute),
         ];
         for (name, id) in entries {
             self.dictionary
@@ -280,6 +285,13 @@ impl Machine {
         }
 
         let upper = token.to_ascii_uppercase();
+
+        // ' (tick) works in both interpret and compile modes; the deferred
+        // handle_consumer call dispatches based on the current mode.
+        if upper == "'" {
+            self.next_consumer = Some(NextTokenConsumer::Tick);
+            return;
+        }
 
         if self.compiling.is_some() {
             self.dispatch_compile(token, &upper);
@@ -354,7 +366,33 @@ impl Machine {
                     .insert(name.clone(), Word::Constant(v));
                 self.output.push(format!("CONSTANT {} = {}", name, v));
             }
+            NextTokenConsumer::Tick => {
+                let upper = token.to_ascii_uppercase();
+                if !self.dictionary.contains_key(&upper) {
+                    self.output.push(format!("': unknown word {}", token));
+                    return;
+                }
+                let xt = self.intern_xt(&upper);
+                if self.compiling.is_some() {
+                    let p = self.compiling.as_mut().unwrap();
+                    p.body.push(Op {
+                        label: format!("' {}", upper),
+                        kind: OpKind::PushInt(xt),
+                    });
+                } else {
+                    self.stack.push(Value::Int(xt));
+                }
+            }
         }
+    }
+
+    fn intern_xt(&mut self, name: &str) -> i32 {
+        if let Some(idx) = self.xt_table.iter().position(|n| n == name) {
+            return idx as i32;
+        }
+        let idx = self.xt_table.len() as i32;
+        self.xt_table.push(name.to_string());
+        idx
     }
 
     fn dispatch_compile(&mut self, token: &str, upper: &str) {
@@ -853,6 +891,7 @@ impl Machine {
             PrimitiveId::I => self.prim_i(),
             PrimitiveId::J => self.prim_j(),
             PrimitiveId::Allot => self.prim_allot(),
+            PrimitiveId::Execute => self.prim_execute(),
         }
     }
 
@@ -1098,6 +1137,31 @@ impl Machine {
             return;
         }
         self.stack.push(self.return_stack[len - 3].clone());
+    }
+
+    fn prim_execute(&mut self) {
+        let xt = match self.pop_int() {
+            Some(n) => n,
+            None => {
+                self.output.push("EXECUTE: stack empty".to_string());
+                return;
+            }
+        };
+        let idx = xt as usize;
+        if xt < 0 || idx >= self.xt_table.len() {
+            self.output.push(format!("EXECUTE: bad xt {}", xt));
+            return;
+        }
+        let name = self.xt_table[idx].clone();
+        match self.dictionary.get(&name).cloned() {
+            Some(Word::Primitive(p)) => self.execute_primitive(p),
+            Some(Word::User(ops)) => self.run_user(&name, ops),
+            Some(Word::Variable(addr)) => self.stack.push(Value::Int(addr)),
+            Some(Word::Constant(v)) => self.stack.push(Value::Int(v)),
+            None => self
+                .output
+                .push(format!("EXECUTE: word {} no longer defined", name)),
+        }
     }
 
     fn prim_allot(&mut self) {
