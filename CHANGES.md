@@ -2,6 +2,11 @@
 
 ## 2026-04-24
 
+### Documentation
+
+- README screenshot refreshed against the live site after the Memory pane and
+  Output cleanup landed; bumped the `?ts=` cache-buster
+
 ### UI
 
 - Memory pane: new `#memoryPane` textarea and `Machine::get_memory_text()`
