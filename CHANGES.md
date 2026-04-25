@@ -16,6 +16,20 @@
 
 ### Language features
 
+- `POSTPONE` — compile-mode helper that consumes the next token as a
+  target name and emits an `OpKind::PostponeCall(name)` into the
+  current word. At run time, that op appends a `CallByName(name)` to
+  whatever word is currently being compiled — so an `IMMEDIATE` word
+  containing `POSTPONE DUP POSTPONE +` becomes a Forth-side macro that
+  splices `DUP +` into its callers. Pending tracks `pending_postpone`
+  to consume the target token
+
+- `:NONAME ... ;` — define an anonymous word and push its xt to the
+  data stack. Synthesises a name like `<anon-N>` (counter on Machine),
+  defines it the same way a normal `: ... ;` would, then interns the
+  xt and leaves it on the stack so the caller can `EXECUTE` it,
+  store it in a variable, etc.
+
 - `CREATE` and `DOES>` — the Forth defining-word mechanism. `CREATE` is a
   primitive that captures the current `HERE` as a data-field address and
   defers the name to the next token (via a new `NextTokenConsumer::Create`

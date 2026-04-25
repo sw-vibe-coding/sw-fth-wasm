@@ -85,6 +85,7 @@ enum OpKind {
     LoopNextStep(usize),
     LeaveLoop(usize),
     Does,
+    PostponeCall(String),
 }
 
 #[derive(Clone, Debug)]
@@ -93,6 +94,8 @@ struct Pending {
     body: Vec<Op>,
     cf_stack: Vec<usize>,
     leave_stack: Vec<Vec<usize>>,
+    pending_postpone: bool,
+    anonymous: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -119,6 +122,7 @@ pub struct Machine {
     paused_compile: Option<Pending>,
     next_consumer: Option<NextTokenConsumer>,
     pending_does: Option<Vec<Op>>,
+    anon_counter: u32,
 }
 
 #[wasm_bindgen]
@@ -133,7 +137,7 @@ impl Machine {
             output: vec![
                 "Machine created.".to_string(),
                 "Primitives: DUP SWAP DROP OVER ROT + - * / MOD = < > . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , LATEST IMMEDIATE CREATE".to_string(),
-                "Compile: : ; IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO LOOP +LOOP LEAVE [ ] LITERAL DOES>".to_string(),
+                "Compile: : ; :NONAME IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO LOOP +LOOP LEAVE [ ] LITERAL DOES> POSTPONE".to_string(),
                 "Interactive: SEE <word> | VARIABLE <name> | <val> CONSTANT <name> | ' <word>".to_string(),
             ],
             output_line: String::new(),
@@ -146,6 +150,7 @@ impl Machine {
             paused_compile: None,
             next_consumer: None,
             pending_does: None,
+            anon_counter: 0,
         };
         m.install_primitives();
         m
@@ -366,6 +371,23 @@ impl Machine {
                 body: Vec::new(),
                 cf_stack: Vec::new(),
                 leave_stack: Vec::new(),
+                pending_postpone: false,
+                anonymous: false,
+            });
+            return;
+        }
+
+        if upper == ":NONAME" {
+            let n = self.anon_counter;
+            self.anon_counter += 1;
+            let name = format!("<anon-{}>", n);
+            self.compiling = Some(Pending {
+                name: Some(name),
+                body: Vec::new(),
+                cf_stack: Vec::new(),
+                leave_stack: Vec::new(),
+                pending_postpone: false,
+                anonymous: true,
             });
             return;
         }
@@ -478,6 +500,24 @@ impl Machine {
             return;
         }
 
+        // POSTPONE consumes the next token as its target.
+        if pending.pending_postpone {
+            let name = upper.to_string();
+            if !self.dictionary.contains_key(&name) {
+                self.output
+                    .push(format!("POSTPONE: unknown word {}", token));
+                self.compiling.as_mut().unwrap().pending_postpone = false;
+                return;
+            }
+            let p = self.compiling.as_mut().unwrap();
+            p.pending_postpone = false;
+            p.body.push(Op {
+                label: format!("POSTPONE {}", name),
+                kind: OpKind::PostponeCall(name),
+            });
+            return;
+        }
+
         if upper == ";" {
             let done = self.compiling.take().unwrap();
             if !done.cf_stack.is_empty() {
@@ -489,11 +529,19 @@ impl Machine {
                 ));
                 return;
             }
+            let is_anon = done.anonymous;
             let name = done.name.unwrap();
             let body_len = done.body.len();
             self.define_word(name.clone(), Word::User(done.body));
-            self.output
-                .push(format!("defined {} ({} tokens)", name, body_len));
+            if is_anon {
+                let xt = self.intern_xt(&name);
+                self.stack.push(Value::Int(xt));
+                self.output
+                    .push(format!(":NONAME -> xt {} ({} ops)", xt, body_len));
+            } else {
+                self.output
+                    .push(format!("defined {} ({} tokens)", name, body_len));
+            }
             return;
         }
 
@@ -558,6 +606,11 @@ impl Machine {
                 label: "DOES>".to_string(),
                 kind: OpKind::Does,
             });
+            return;
+        }
+
+        if upper == "POSTPONE" {
+            self.compiling.as_mut().unwrap().pending_postpone = true;
             return;
         }
 
@@ -1016,6 +1069,19 @@ impl Machine {
                     r
                 };
                 self.pending_does = Some(remaining);
+                self.emit_trace(&op.label);
+            }
+            OpKind::PostponeCall(name) => {
+                if self.compiling.is_some() {
+                    let p = self.compiling.as_mut().unwrap();
+                    p.body.push(Op {
+                        label: name.clone(),
+                        kind: OpKind::CallByName(name.clone()),
+                    });
+                } else {
+                    self.output
+                        .push(format!("POSTPONE: not compiling, cannot postpone {}", name));
+                }
                 self.emit_trace(&op.label);
             }
         }
