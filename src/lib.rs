@@ -5,7 +5,7 @@ use wasm_bindgen::prelude::*;
 /// Bumped whenever the saved-state schema changes (new OpKind / Word /
 /// PrimitiveId variants, renamed fields, etc.). Older snapshots are
 /// rejected at load time and the user is steered back to a fresh boot.
-const STATE_VERSION: u32 = 2;
+const STATE_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 enum Value {
@@ -77,6 +77,9 @@ enum PrimitiveId {
     Type,
     Abort,
     Exit,
+    QDo,
+    Pick,
+    Roll,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -115,6 +118,7 @@ enum OpKind {
     Jump(usize),
     Noop,
     LoopEnter,
+    LoopEnterCheck { skip_target: usize },
     LoopNext(usize),
     LoopNextStep(usize),
     LeaveLoop(usize),
@@ -174,8 +178,8 @@ impl Machine {
             xt_table: Vec::new(),
             output: vec![
                 "Machine created.".to_string(),
-                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD /MOD */MOD = < > AND OR XOR INVERT LSHIFT RSHIFT . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , COMPILE, LATEST IMMEDIATE CREATE BASE TYPE ABORT EXIT".to_string(),
-                "Compile: : ; :NONAME IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO LOOP +LOOP LEAVE [ ] LITERAL DOES> POSTPONE .\" S\" ABORT\"".to_string(),
+                "Primitives: DUP SWAP DROP OVER ROT PICK ROLL + - * / MOD /MOD */MOD = < > AND OR XOR INVERT LSHIFT RSHIFT . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , COMPILE, LATEST IMMEDIATE CREATE BASE TYPE ABORT EXIT".to_string(),
+                "Compile: : ; :NONAME IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO ?DO LOOP +LOOP LEAVE [ ] LITERAL DOES> POSTPONE .\" S\" ABORT\"".to_string(),
                 "Interactive: SEE <word> | VARIABLE <name> | <val> CONSTANT <name> | ' <word>".to_string(),
             ],
             output_line: String::new(),
@@ -657,6 +661,9 @@ impl Machine {
             ("TYPE", PrimitiveId::Type),
             ("ABORT", PrimitiveId::Abort),
             ("EXIT", PrimitiveId::Exit),
+            ("?DO", PrimitiveId::QDo),
+            ("PICK", PrimitiveId::Pick),
+            ("ROLL", PrimitiveId::Roll),
         ];
         for (name, id) in entries {
             self.define_word((*name).to_string(), Word::Primitive(*id));
@@ -665,7 +672,7 @@ impl Machine {
         // which is a normal word that resumes compilation.
         for name in [
             "IF", "ELSE", "THEN", "BEGIN", "UNTIL", "WHILE", "REPEAT", "DO", "LOOP",
-            "+LOOP", "LEAVE", "[", "LITERAL", "DOES>", "POSTPONE",
+            "+LOOP", "LEAVE", "[", "LITERAL", "DOES>", "POSTPONE", "?DO",
         ] {
             self.immediate_words.insert(name.to_string());
         }
@@ -1051,6 +1058,11 @@ impl Machine {
                 *t = after;
             }
         }
+        // If the matching opener was ?DO, patch its skip target so an
+        // already-finished range jumps cleanly past LOOP.
+        if let OpKind::LoopEnterCheck { skip_target } = &mut p.body[idx_do].kind {
+            *skip_target = after;
+        }
     }
 
     fn compile_token(&self, token: &str, upper: &str) -> Op {
@@ -1186,6 +1198,23 @@ impl Machine {
                         self.return_stack.push(Value::Int(s));
                     }
                     _ => self.output.push("DO: need limit and start".to_string()),
+                }
+                self.emit_trace(&op.label);
+            }
+            OpKind::LoopEnterCheck { skip_target } => {
+                let start = self.pop_int();
+                let limit = self.pop_int();
+                match (limit, start) {
+                    (Some(l), Some(s)) => {
+                        if s >= l {
+                            // empty range: skip the body entirely
+                            frames.last_mut().unwrap().pc = *skip_target;
+                        } else {
+                            self.return_stack.push(Value::Int(l));
+                            self.return_stack.push(Value::Int(s));
+                        }
+                    }
+                    _ => self.output.push("?DO: need limit and start".to_string()),
                 }
                 self.emit_trace(&op.label);
             }
@@ -1367,6 +1396,9 @@ impl Machine {
             PrimitiveId::Type => self.prim_type(),
             PrimitiveId::Abort => self.do_abort(),
             PrimitiveId::Exit => self.exiting = true,
+            PrimitiveId::QDo => self.prim_q_do(),
+            PrimitiveId::Pick => self.prim_pick(),
+            PrimitiveId::Roll => self.prim_roll(),
             PrimitiveId::Dot => self.prim_dot(),
             PrimitiveId::DotS => self.prim_dot_s(),
             PrimitiveId::Clear => self.prim_clear(),
@@ -2033,6 +2065,75 @@ impl Machine {
         });
         p.cf_stack.push(idx);
         p.leave_stack.push(Vec::new());
+    }
+
+    fn prim_q_do(&mut self) {
+        let p = match self.compiling.as_mut() {
+            Some(p) => p,
+            None => {
+                self.output.push("?DO: not compiling".to_string());
+                return;
+            }
+        };
+        let idx = p.body.len();
+        p.body.push(Op {
+            label: "?DO".to_string(),
+            kind: OpKind::LoopEnterCheck { skip_target: 0 },
+        });
+        p.cf_stack.push(idx);
+        p.leave_stack.push(Vec::new());
+    }
+
+    fn prim_pick(&mut self) {
+        let n = match self.pop_int() {
+            Some(n) => n,
+            None => {
+                self.output.push("PICK: stack empty".to_string());
+                return;
+            }
+        };
+        if n < 0 {
+            self.output.push(format!("PICK: negative index {}", n));
+            return;
+        }
+        let idx = n as usize;
+        if idx >= self.stack.len() {
+            self.output.push(format!(
+                "PICK: stack too shallow ({} items, need {})",
+                self.stack.len(),
+                idx + 1
+            ));
+            return;
+        }
+        let pos = self.stack.len() - 1 - idx;
+        let item = self.stack[pos].clone();
+        self.stack.push(item);
+    }
+
+    fn prim_roll(&mut self) {
+        let n = match self.pop_int() {
+            Some(n) => n,
+            None => {
+                self.output.push("ROLL: stack empty".to_string());
+                return;
+            }
+        };
+        if n < 0 {
+            self.output.push(format!("ROLL: negative index {}", n));
+            return;
+        }
+        let idx = n as usize;
+        if idx >= self.stack.len() {
+            self.output.push(format!(
+                "ROLL: stack too shallow ({} items, need {})",
+                self.stack.len(),
+                idx + 1
+            ));
+            return;
+        }
+        let pos = self.stack.len() - 1 - idx;
+        let item = self.stack.remove(pos);
+        self.stack.push(item);
     }
 
     fn prim_loop(&mut self) {

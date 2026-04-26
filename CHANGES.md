@@ -52,6 +52,14 @@
 
 ### Language features
 
+- `?DO`: like `DO` but skips the body when `start >= limit`. New
+  `OpKind::LoopEnterCheck { skip_target }`; the matching `LOOP` /
+  `+LOOP` patches the skip target to the position past the loop end so
+  empty-range cases are a single jump. STATE_VERSION bumped to 3
+- `PICK ( ... n -- ... item-n )` and `ROLL ( ... n -- ... )` —
+  generalised stack manipulation. `0 PICK` is `DUP`, `1 PICK` is `OVER`;
+  `1 ROLL` is `SWAP`, `2 ROLL` is `ROT`. Both bounds-check `n` against
+  current stack depth and reject negatives
 - `EXIT`: early-return primitive. Sets `Machine.exiting`; the `run_user`
   loop pops the current frame at the next iteration boundary, so a word
   can return early without unwinding the whole stack the way `ABORT`
