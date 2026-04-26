@@ -2,6 +2,11 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
+/// Bumped whenever the saved-state schema changes (new OpKind / Word /
+/// PrimitiveId variants, renamed fields, etc.). Older snapshots are
+/// rejected at load time and the user is steered back to a fresh boot.
+const STATE_VERSION: u32 = 1;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 enum Value {
     Int(i32),
@@ -285,6 +290,7 @@ impl Machine {
 
     pub fn save_state(&self) -> String {
         let state = SavedState {
+            version: STATE_VERSION,
             dictionary: self.dictionary.clone(),
             memory: self.memory.clone(),
             xt_table: self.xt_table.clone(),
@@ -298,6 +304,24 @@ impl Machine {
     }
 
     pub fn load_state(&mut self, json: &str) -> bool {
+        // Two-step deserialize: read the version first so a schema bump
+        // produces a clean diagnostic instead of a confusing parse error
+        // from later fields.
+        match serde_json::from_str::<VersionOnly>(json) {
+            Ok(v) if v.version == STATE_VERSION => {}
+            Ok(v) => {
+                self.output.push(format!(
+                    "State version mismatch ({} vs {}); discarded.",
+                    v.version, STATE_VERSION
+                ));
+                return false;
+            }
+            Err(_) => {
+                self.output
+                    .push("State missing version field; discarded.".to_string());
+                return false;
+            }
+        }
         match serde_json::from_str::<SavedState>(json) {
             Ok(s) => {
                 self.dictionary = s.dictionary;
@@ -320,8 +344,14 @@ impl Machine {
     }
 }
 
+#[derive(Deserialize)]
+struct VersionOnly {
+    version: u32,
+}
+
 #[derive(Serialize, Deserialize)]
 struct SavedState {
+    version: u32,
     dictionary: HashMap<String, Word>,
     memory: Vec<Value>,
     xt_table: Vec<String>,

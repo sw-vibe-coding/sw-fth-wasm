@@ -67,7 +67,11 @@ function saveMachineState() {
 function loadMachineState() {
   try {
     const json = window.localStorage.getItem(STORAGE_KEY_STATE);
-    if (json) return machine.load_state(json);
+    if (!json) return false;
+    if (machine.load_state(json)) return true;
+    // version mismatch / parse error — drop the stale blob so the
+    // bootstrap can take over cleanly on the next load
+    window.localStorage.removeItem(STORAGE_KEY_STATE);
   } catch (_) {
     // ignore
   }

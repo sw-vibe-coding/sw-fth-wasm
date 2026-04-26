@@ -182,6 +182,13 @@
 
 ### UI
 
+- Saved state is now versioned. New `STATE_VERSION` constant (currently
+  `1`) is embedded in the JSON; `load_state` does a two-step deserialize
+  (`VersionOnly` first) so a schema bump produces a clean
+  "version mismatch; discarded" diagnostic instead of a confusing parse
+  error from later fields. `main.js` removes the stale blob from
+  `localStorage` on any load failure so the bootstrap takes over the
+  next time the page loads
 - Machine state (dictionary, memory, xt_table, immediate_words, latest,
   data and return stacks) persists across page reloads via
   `localStorage` key `sw-fth-wasm:state`. New `Machine::save_state()` /
