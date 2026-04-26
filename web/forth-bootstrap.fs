@@ -16,6 +16,9 @@
 : 2DUP   ( a b -- a b a b )   OVER OVER ;
 : 2DROP  ( a b -- )           DROP DROP ;
 : 2SWAP  ( a b c d -- c d a b )  ROT >R ROT R> ;
+: <=     ( a b -- flag )      > 0= ;
+: >=     ( a b -- flag )      < 0= ;
+: <>     ( a b -- flag )      = 0= ;
 : MIN    ( a b -- min )       2DUP > IF SWAP THEN DROP ;
 : MAX    ( a b -- max )       2DUP < IF SWAP THEN DROP ;
 : VAR    ( -- )  CREATE 0 , ;

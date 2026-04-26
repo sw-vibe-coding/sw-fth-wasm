@@ -10,6 +10,8 @@
 
 ### UI
 
+- `web/forth-bootstrap.fs` adds `<=`, `>=`, and `<>` (each is `<comparator> 0=`
+  inverting the existing primitive flag) — completes the comparison family
 - `web/forth-bootstrap.fs` adds `2DUP`, `2DROP`, `2SWAP`, `MIN`, and `MAX`
   alongside the existing helpers, plus a `HELLO` example exercising `."`
 - `web/forth-bootstrap.fs`: a Forth-source kernel-extension file with
