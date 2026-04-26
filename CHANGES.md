@@ -15,6 +15,10 @@
   built on top of the kernel's `LATEST` + `COMPILE,` primitives. Lets
   `: FACT DUP 1 > IF DUP 1 - RECURSE * THEN ;` work without depending
   on FACT being in the dictionary mid-compile
+- `web/forth-bootstrap.fs` gains five more pure-Forth helpers: `1+`, `1-`,
+  `2OVER`, `BOUNDS` (`addr count -- end addr` for memory iteration), and
+  `MOVE` (`src dst count -- ` forward cell copy). `2OVER` is built from
+  `>R >R 2DUP R> R> 2SWAP`; `MOVE` uses a `DO LOOP` over `OVER + @ OVER + !`
 - `web/forth-bootstrap.fs` gains `0<>`, `SPACES`, and `?` (fetch-and-print).
   All three are pure-Forth one-liners
 - `web/forth-bootstrap.fs` adds Forth-style `CASE` / `OF` / `ENDOF` /

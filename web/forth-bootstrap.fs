@@ -13,9 +13,14 @@
 : TUCK   ( a b -- b a b ) SWAP OVER ;
 : ?DUP   ( n -- n n | 0 )   DUP IF DUP THEN ;
 : */     ( a b c -- a*b/c ) * / ;
+: 1+     ( n -- n+1 )         1 + ;
+: 1-     ( n -- n-1 )         1 - ;
 : 2DUP   ( a b -- a b a b )   OVER OVER ;
 : 2DROP  ( a b -- )           DROP DROP ;
 : 2SWAP  ( a b c d -- c d a b )  ROT >R ROT R> ;
+: 2OVER  ( a b c d -- a b c d a b )  >R >R 2DUP R> R> 2SWAP ;
+: BOUNDS ( addr count -- end addr )  OVER + SWAP ;
+: MOVE   ( src dst count -- )  0 DO OVER I + @ OVER I + ! LOOP 2DROP ;
 : <=     ( a b -- flag )      > 0= ;
 : >=     ( a b -- flag )      < 0= ;
 : <>     ( a b -- flag )      = 0= ;
