@@ -69,6 +69,7 @@ enum PrimitiveId {
     DoesArrow,
     Postpone,
     Type,
+    Abort,
 }
 
 #[derive(Clone, Debug)]
@@ -114,6 +115,7 @@ enum OpKind {
     PostponeCall(String),
     PrintStr(String),
     SLiteral { addr: i32, count: i32 },
+    AbortStr(String),
 }
 
 #[derive(Clone, Debug)]
@@ -151,6 +153,7 @@ pub struct Machine {
     next_consumer: Option<NextTokenConsumer>,
     pending_does: Option<Vec<Op>>,
     anon_counter: u32,
+    aborting: bool,
 }
 
 #[wasm_bindgen]
@@ -164,8 +167,8 @@ impl Machine {
             xt_table: Vec::new(),
             output: vec![
                 "Machine created.".to_string(),
-                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD /MOD */MOD = < > AND OR XOR INVERT LSHIFT RSHIFT . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , COMPILE, LATEST IMMEDIATE CREATE BASE TYPE".to_string(),
-                "Compile: : ; :NONAME IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO LOOP +LOOP LEAVE [ ] LITERAL DOES> POSTPONE .\" S\"".to_string(),
+                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD /MOD */MOD = < > AND OR XOR INVERT LSHIFT RSHIFT . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , COMPILE, LATEST IMMEDIATE CREATE BASE TYPE ABORT".to_string(),
+                "Compile: : ; :NONAME IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO LOOP +LOOP LEAVE [ ] LITERAL DOES> POSTPONE .\" S\" ABORT\"".to_string(),
                 "Interactive: SEE <word> | VARIABLE <name> | <val> CONSTANT <name> | ' <word>".to_string(),
             ],
             output_line: String::new(),
@@ -179,6 +182,7 @@ impl Machine {
             next_consumer: None,
             pending_does: None,
             anon_counter: 0,
+            aborting: false,
         };
         m.install_primitives();
         m
@@ -192,6 +196,7 @@ impl Machine {
         self.next_consumer = None;
         self.pending_does = None;
         self.output_line.clear();
+        self.aborting = false;
         self.output.push("VM reset.".to_string());
         self.history.push("--- reset ---".to_string());
         self.trace.push("--- reset ---".to_string());
@@ -206,6 +211,7 @@ impl Machine {
         self.history.push(format!("> {}", line));
         self.run_tokens(line);
         self.flush_output_line();
+        self.aborting = false;
     }
 
     pub fn load_source(&mut self, src: &str) {
@@ -217,8 +223,11 @@ impl Machine {
         self.history.push("> [load source]".to_string());
         self.run_tokens(src);
         self.flush_output_line();
-        self.output
-            .push(format!("Loaded source ({} chars).", src.len()));
+        if !self.aborting {
+            self.output
+                .push(format!("Loaded source ({} chars).", src.len()));
+        }
+        self.aborting = false;
     }
 
     pub fn get_stack_text(&self) -> String {
@@ -274,6 +283,9 @@ impl Machine {
         let mut i = 0;
         let mut comment_depth: u32 = 0;
         while i < chars.len() {
+            if self.aborting {
+                break;
+            }
             // Skip whitespace
             while i < chars.len() && chars[i].is_whitespace() {
                 i += 1;
@@ -329,6 +341,25 @@ impl Machine {
                 self.handle_print_string(s);
                 continue;
             }
+            // ABORT": same string-scan as ." / S"; emits a conditional abort op
+            if token == "ABORT\"" {
+                while i < chars.len() && chars[i].is_whitespace() {
+                    i += 1;
+                }
+                let mut s = String::new();
+                while i < chars.len() && chars[i] != '"' {
+                    s.push(chars[i]);
+                    i += 1;
+                }
+                if i < chars.len() {
+                    i += 1; // skip closing "
+                } else {
+                    self.output
+                        .push("ABORT\": missing closing quote".to_string());
+                }
+                self.handle_abort_string(s);
+                continue;
+            }
             // S": same scan; deposit chars in memory, expose addr+count
             if token == "S\"" {
                 while i < chars.len() && chars[i].is_whitespace() {
@@ -366,6 +397,39 @@ impl Machine {
             });
         } else {
             self.output_line.push_str(&s);
+        }
+    }
+
+    fn do_abort(&mut self) {
+        // ABORT semantics: empty both stacks, drop any in-flight compile or
+        // pending-token state, flush any partial output line, and raise
+        // self.aborting so the active VM loop and the outer token loop unwind.
+        self.stack.clear();
+        self.return_stack.clear();
+        self.compiling = None;
+        self.paused_compile = None;
+        self.next_consumer = None;
+        self.pending_does = None;
+        self.output_line.clear();
+        self.aborting = true;
+        self.output.push("ABORT".to_string());
+    }
+
+    fn handle_abort_string(&mut self, s: String) {
+        if self.compiling.is_some() {
+            let label = format!("ABORT\" {}\"", s);
+            let p = self.compiling.as_mut().unwrap();
+            p.body.push(Op {
+                label,
+                kind: OpKind::AbortStr(s),
+            });
+        } else {
+            // Interpret-mode ABORT": pop flag; if true, print and abort.
+            let flag = self.pop_int().unwrap_or(0);
+            if flag != 0 {
+                self.output.push(s);
+                self.do_abort();
+            }
         }
     }
 
@@ -495,6 +559,7 @@ impl Machine {
             ("IMMEDIATE", PrimitiveId::Immediate),
             ("CREATE", PrimitiveId::Create),
             ("TYPE", PrimitiveId::Type),
+            ("ABORT", PrimitiveId::Abort),
         ];
         for (name, id) in entries {
             self.define_word((*name).to_string(), Word::Primitive(*id));
@@ -918,6 +983,10 @@ impl Machine {
         }];
 
         while !frames.is_empty() {
+            if self.aborting {
+                frames.clear();
+                break;
+            }
             let next = {
                 let frame = frames.last_mut().unwrap();
                 if frame.pc >= frame.ops.len() {
@@ -1143,6 +1212,14 @@ impl Machine {
                 self.stack.push(Value::Int(*count));
                 self.emit_trace(&op.label);
             }
+            OpKind::AbortStr(s) => {
+                let flag = self.pop_int().unwrap_or(0);
+                if flag != 0 {
+                    self.output.push(s.clone());
+                    self.do_abort();
+                }
+                self.emit_trace(&op.label);
+            }
         }
     }
 
@@ -1187,6 +1264,7 @@ impl Machine {
             PrimitiveId::DoesArrow => self.prim_does_arrow(),
             PrimitiveId::Postpone => self.prim_postpone(),
             PrimitiveId::Type => self.prim_type(),
+            PrimitiveId::Abort => self.do_abort(),
             PrimitiveId::Dot => self.prim_dot(),
             PrimitiveId::DotS => self.prim_dot_s(),
             PrimitiveId::Clear => self.prim_clear(),

@@ -49,6 +49,10 @@
 : SPACES    ( n -- )  0 DO SPACE LOOP ;
 : ?         ( addr -- )  @ . ;
 
+\ Abort-on-zero-divisor demo: pre-checks before /. ABORT" prints its
+\ string and unwinds the current frame stack back to the outer REPL.
+: SAFE-DIV  ( a b -- a/b )  DUP 0= ABORT" divide by zero" / ;
+
 \ String demos: ." prints inline, S" pushes (addr count) for TYPE.
 : HELLO     ( -- )  ." Hello, world!" CR ;
 : GREETING  ( -- )  S" Hello from S-quote and TYPE." TYPE CR ;

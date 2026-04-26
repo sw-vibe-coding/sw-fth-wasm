@@ -48,6 +48,16 @@
 
 ### Language features
 
+- `ABORT` and `ABORT"`: error-unwind primitives. New `Machine.aborting`
+  flag is checked at every iteration of `run_user`'s VM loop and
+  `run_tokens`' token loop; both unwind cleanly when set. `ABORT` clears
+  the data and return stacks, drops any in-flight compile or pending
+  consumer state, flushes `output_line`, and logs `"ABORT"`. `ABORT"`
+  is a tokenizer-level reader (same scan as `."` / `S"`); in compile
+  mode emits `OpKind::AbortStr(String)` whose runtime pops a flag and
+  conditionally prints + aborts; in interpret mode does the same right
+  away. `eval_repl` / `load_source` clear the flag on exit. Bootstrap
+  gains `: SAFE-DIV DUP 0= ABORT" divide by zero" / ;`
 - `S"` and `TYPE`: string memory. `S"` deposits one memory cell per character
   at `HERE`, then either pushes `(addr count)` directly (interpret mode) or
   emits an `OpKind::SLiteral { addr, count }` whose runtime is `push addr;
