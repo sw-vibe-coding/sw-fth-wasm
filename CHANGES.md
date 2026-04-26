@@ -46,6 +46,13 @@
 
 ### Language features
 
+- `S"` and `TYPE`: string memory. `S"` deposits one memory cell per character
+  at `HERE`, then either pushes `(addr count)` directly (interpret mode) or
+  emits an `OpKind::SLiteral { addr, count }` whose runtime is `push addr;
+  push count` (compile mode). `TYPE ( addr count -- )` reads `count` cells
+  starting at `addr`, casts each to a Unicode codepoint, and appends the
+  characters to `output_line`. SEE labels are `S" <text>"` so the body
+  decompiles legibly. Bootstrap gains a `GREETING` demo using S" + TYPE
 - `."` (string-print): in compile mode emits `OpKind::PrintStr(String)` that
   appends the captured literal to `output_line` at run time; in interpret mode
   appends directly. The token loop is now a hand-rolled char walker that

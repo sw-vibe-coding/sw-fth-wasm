@@ -44,5 +44,6 @@
 : ENDOF    ( count -- count+1 )   POSTPONE ELSE 1 + ; IMMEDIATE
 : ENDCASE  ( count -- )           POSTPONE DROP BEGIN ?DUP WHILE 1 - POSTPONE THEN REPEAT ; IMMEDIATE
 
-\ A small string demo using the new ." word.
-: HELLO  ( -- )  ." Hello, world!" CR ;
+\ String demos: ." prints inline, S" pushes (addr count) for TYPE.
+: HELLO     ( -- )  ." Hello, world!" CR ;
+: GREETING  ( -- )  S" Hello from S-quote and TYPE." TYPE CR ;

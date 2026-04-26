@@ -68,6 +68,7 @@ enum PrimitiveId {
     Literal,
     DoesArrow,
     Postpone,
+    Type,
 }
 
 #[derive(Clone, Debug)]
@@ -112,6 +113,7 @@ enum OpKind {
     Does,
     PostponeCall(String),
     PrintStr(String),
+    SLiteral { addr: i32, count: i32 },
 }
 
 #[derive(Clone, Debug)]
@@ -162,8 +164,8 @@ impl Machine {
             xt_table: Vec::new(),
             output: vec![
                 "Machine created.".to_string(),
-                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD /MOD */MOD = < > AND OR XOR INVERT LSHIFT RSHIFT . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , COMPILE, LATEST IMMEDIATE CREATE BASE".to_string(),
-                "Compile: : ; :NONAME IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO LOOP +LOOP LEAVE [ ] LITERAL DOES> POSTPONE .\"".to_string(),
+                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD /MOD */MOD = < > AND OR XOR INVERT LSHIFT RSHIFT . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , COMPILE, LATEST IMMEDIATE CREATE BASE TYPE".to_string(),
+                "Compile: : ; :NONAME IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO LOOP +LOOP LEAVE [ ] LITERAL DOES> POSTPONE .\" S\"".to_string(),
                 "Interactive: SEE <word> | VARIABLE <name> | <val> CONSTANT <name> | ' <word>".to_string(),
             ],
             output_line: String::new(),
@@ -327,6 +329,25 @@ impl Machine {
                 self.handle_print_string(s);
                 continue;
             }
+            // S": same scan; deposit chars in memory, expose addr+count
+            if token == "S\"" {
+                while i < chars.len() && chars[i].is_whitespace() {
+                    i += 1;
+                }
+                let mut s = String::new();
+                while i < chars.len() && chars[i] != '"' {
+                    s.push(chars[i]);
+                    i += 1;
+                }
+                if i < chars.len() {
+                    i += 1; // skip closing "
+                } else {
+                    self.output
+                        .push("S\": missing closing quote".to_string());
+                }
+                self.handle_s_string(s);
+                continue;
+            }
             self.dispatch_token(&token);
         }
         if comment_depth > 0 {
@@ -345,6 +366,27 @@ impl Machine {
             });
         } else {
             self.output_line.push_str(&s);
+        }
+    }
+
+    fn handle_s_string(&mut self, s: String) {
+        // Deposit one memory cell per character. The address+count pair
+        // becomes a Forth "string" that TYPE / COUNT etc. can consume.
+        let addr = self.memory.len() as i32;
+        for c in s.chars() {
+            self.memory.push(Value::Int(c as i32));
+        }
+        let count = s.chars().count() as i32;
+        if self.compiling.is_some() {
+            let label = format!("S\" {}\"", s);
+            let p = self.compiling.as_mut().unwrap();
+            p.body.push(Op {
+                label,
+                kind: OpKind::SLiteral { addr, count },
+            });
+        } else {
+            self.stack.push(Value::Int(addr));
+            self.stack.push(Value::Int(count));
         }
     }
 
@@ -452,6 +494,7 @@ impl Machine {
             ("LATEST", PrimitiveId::Latest),
             ("IMMEDIATE", PrimitiveId::Immediate),
             ("CREATE", PrimitiveId::Create),
+            ("TYPE", PrimitiveId::Type),
         ];
         for (name, id) in entries {
             self.define_word((*name).to_string(), Word::Primitive(*id));
@@ -1095,6 +1138,11 @@ impl Machine {
                 self.output_line.push_str(s);
                 self.emit_trace(&op.label);
             }
+            OpKind::SLiteral { addr, count } => {
+                self.stack.push(Value::Int(*addr));
+                self.stack.push(Value::Int(*count));
+                self.emit_trace(&op.label);
+            }
         }
     }
 
@@ -1138,6 +1186,7 @@ impl Machine {
             PrimitiveId::Literal => self.prim_literal(),
             PrimitiveId::DoesArrow => self.prim_does_arrow(),
             PrimitiveId::Postpone => self.prim_postpone(),
+            PrimitiveId::Type => self.prim_type(),
             PrimitiveId::Dot => self.prim_dot(),
             PrimitiveId::DotS => self.prim_dot_s(),
             PrimitiveId::Clear => self.prim_clear(),
@@ -1893,6 +1942,30 @@ impl Machine {
             None => self
                 .output
                 .push("POSTPONE: not compiling".to_string()),
+        }
+    }
+
+    fn prim_type(&mut self) {
+        let count = self.pop_int();
+        let addr = self.pop_int();
+        match (addr, count) {
+            (Some(a), Some(c)) if a >= 0 && c >= 0 => {
+                let start = a as usize;
+                let n = c as usize;
+                if start.checked_add(n).map(|end| end > self.memory.len()).unwrap_or(true) {
+                    self.output.push(format!(
+                        "TYPE: range out of bounds (addr {} count {})",
+                        a, c
+                    ));
+                    return;
+                }
+                for i in 0..n {
+                    let Value::Int(code) = self.memory[start + i];
+                    let ch = std::char::from_u32(code as u32).unwrap_or('?');
+                    self.output_line.push(ch);
+                }
+            }
+            _ => self.output.push("TYPE: need addr and count".to_string()),
         }
     }
 
