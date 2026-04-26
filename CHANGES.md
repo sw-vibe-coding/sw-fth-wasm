@@ -10,6 +10,11 @@
 
 ### UI
 
+- `web/forth-bootstrap.fs` adds `RECURSE` ( IMMEDIATE ): defined as
+  `LATEST COMPILE,`, it's the first user-space compile-time helper
+  built on top of the kernel's `LATEST` + `COMPILE,` primitives. Lets
+  `: FACT DUP 1 > IF DUP 1 - RECURSE * THEN ;` work without depending
+  on FACT being in the dictionary mid-compile
 - `web/forth-bootstrap.fs` adds `WITHIN ( n lo hi -- flag )` defined as
   `>R OVER <= SWAP R> < AND`, exercising the new bitwise `AND` to
   combine two flag conditions
@@ -38,6 +43,15 @@
   reads whitespace-delimited tokens normally and switches to char-by-char
   mode after `."` to capture everything up to the closing `"`. Bootstrap
   gains a `: HELLO ." Hello, world!" CR ;` demo
+- `LSHIFT` and `RSHIFT` bit-shift primitives. Both use Rust's
+  `wrapping_shl` / `wrapping_shr` on the unsigned cast so out-of-range
+  shift counts wrap modulo 32 instead of panicking. RSHIFT is the
+  logical (zero-fill) form
+- `COMPILE,` ( xt -- ): pop an xt and emit a `CallByName(name)` op into
+  the currently-compiling word's body. Errors if not compiling
+- `:` now updates `self.latest` at name capture, so `LATEST` (and any
+  word that calls it, like `RECURSE`) sees the in-progress definition
+  during compilation instead of the previous one
 - Bitwise primitives `AND`, `OR`, `XOR`, `INVERT`. Two-int variants for
   AND/OR/XOR using Rust `&` `|` `^`, INVERT does the standard Forth
   one's-complement (Rust `!`). Forth's flag convention (-1 / 0) means

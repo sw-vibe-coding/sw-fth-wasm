@@ -27,6 +27,9 @@ enum PrimitiveId {
     Or,
     Xor,
     Invert,
+    LShift,
+    RShift,
+    CompileComma,
     Dot,
     DotS,
     Clear,
@@ -143,7 +146,7 @@ impl Machine {
             xt_table: Vec::new(),
             output: vec![
                 "Machine created.".to_string(),
-                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD /MOD */MOD = < > AND OR XOR INVERT . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , LATEST IMMEDIATE CREATE".to_string(),
+                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD /MOD */MOD = < > AND OR XOR INVERT LSHIFT RSHIFT . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , COMPILE, LATEST IMMEDIATE CREATE".to_string(),
                 "Compile: : ; :NONAME IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO LOOP +LOOP LEAVE [ ] LITERAL DOES> POSTPONE .\"".to_string(),
                 "Interactive: SEE <word> | VARIABLE <name> | <val> CONSTANT <name> | ' <word>".to_string(),
             ],
@@ -350,6 +353,9 @@ impl Machine {
             ("OR", PrimitiveId::Or),
             ("XOR", PrimitiveId::Xor),
             ("INVERT", PrimitiveId::Invert),
+            ("LSHIFT", PrimitiveId::LShift),
+            ("RSHIFT", PrimitiveId::RShift),
+            ("COMPILE,", PrimitiveId::CompileComma),
             (".", PrimitiveId::Dot),
             (".S", PrimitiveId::DotS),
             ("CLEAR", PrimitiveId::Clear),
@@ -584,7 +590,12 @@ impl Machine {
                 self.compiling = None;
                 return;
             }
-            pending.name = Some(upper.to_string());
+            let name = upper.to_string();
+            pending.name = Some(name.clone());
+            // Make LATEST point at the in-progress definition so RECURSE-style
+            // helpers can resolve it via xt_table while the body is still
+            // being compiled.
+            self.latest = Some(name);
             return;
         }
 
@@ -1200,6 +1211,9 @@ impl Machine {
             PrimitiveId::Or => self.prim_or(),
             PrimitiveId::Xor => self.prim_xor(),
             PrimitiveId::Invert => self.prim_invert(),
+            PrimitiveId::LShift => self.prim_lshift(),
+            PrimitiveId::RShift => self.prim_rshift(),
+            PrimitiveId::CompileComma => self.prim_compile_comma(),
             PrimitiveId::Dot => self.prim_dot(),
             PrimitiveId::DotS => self.prim_dot_s(),
             PrimitiveId::Clear => self.prim_clear(),
@@ -1660,6 +1674,55 @@ impl Machine {
         match self.pop_int() {
             Some(n) => self.stack.push(Value::Int(!n)),
             None => self.output.push("INVERT: stack empty".to_string()),
+        }
+    }
+
+    fn prim_lshift(&mut self) {
+        let n = self.pop_int();
+        let a = self.pop_int();
+        match (a, n) {
+            (Some(a), Some(n)) => {
+                let r = (a as u32).wrapping_shl(n as u32) as i32;
+                self.stack.push(Value::Int(r));
+            }
+            _ => self.output.push("LSHIFT: need two ints".to_string()),
+        }
+    }
+
+    fn prim_rshift(&mut self) {
+        let n = self.pop_int();
+        let a = self.pop_int();
+        match (a, n) {
+            (Some(a), Some(n)) => {
+                let r = (a as u32).wrapping_shr(n as u32) as i32;
+                self.stack.push(Value::Int(r));
+            }
+            _ => self.output.push("RSHIFT: need two ints".to_string()),
+        }
+    }
+
+    fn prim_compile_comma(&mut self) {
+        let xt = match self.pop_int() {
+            Some(n) => n,
+            None => {
+                self.output.push("COMPILE,: stack empty".to_string());
+                return;
+            }
+        };
+        let idx = xt as usize;
+        if xt < 0 || idx >= self.xt_table.len() {
+            self.output.push(format!("COMPILE,: bad xt {}", xt));
+            return;
+        }
+        let name = self.xt_table[idx].clone();
+        if let Some(p) = self.compiling.as_mut() {
+            p.body.push(Op {
+                label: name.clone(),
+                kind: OpKind::CallByName(name),
+            });
+        } else {
+            self.output
+                .push("COMPILE,: not compiling".to_string());
         }
     }
 

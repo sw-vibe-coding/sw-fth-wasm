@@ -25,5 +25,9 @@
 : VAR    ( -- )  CREATE 0 , ;
 : CONST  ( n -- )  CREATE , DOES> @ ;
 
+\ Compile a call to the word currently being defined. Used inside : ... ;
+\ for self-recursive references that don't depend on dict insertion order.
+: RECURSE  ( -- )  LATEST COMPILE, ; IMMEDIATE
+
 \ A small string demo using the new ." word.
 : HELLO  ( -- )  ." Hello, world!" CR ;
