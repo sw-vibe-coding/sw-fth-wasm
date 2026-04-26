@@ -15,6 +15,8 @@
   built on top of the kernel's `LATEST` + `COMPILE,` primitives. Lets
   `: FACT DUP 1 > IF DUP 1 - RECURSE * THEN ;` work without depending
   on FACT being in the dictionary mid-compile
+- `web/forth-bootstrap.fs` gains `0<>`, `SPACES`, and `?` (fetch-and-print).
+  All three are pure-Forth one-liners
 - `web/forth-bootstrap.fs` adds Forth-style `CASE` / `OF` / `ENDOF` /
   `ENDCASE` — implemented entirely in user-space Forth via `POSTPONE` of
   the now-dict-resident `IF` / `ELSE` / `THEN` / `BEGIN` / `WHILE` /

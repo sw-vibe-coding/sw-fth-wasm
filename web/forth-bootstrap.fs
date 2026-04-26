@@ -19,6 +19,7 @@
 : <=     ( a b -- flag )      > 0= ;
 : >=     ( a b -- flag )      < 0= ;
 : <>     ( a b -- flag )      = 0= ;
+: 0<>    ( n -- flag )        0= 0= ;
 : WITHIN ( n lo hi -- flag )  >R OVER <= SWAP R> < AND ;
 : MIN    ( a b -- min )       2DUP > IF SWAP THEN DROP ;
 : MAX    ( a b -- max )       2DUP < IF SWAP THEN DROP ;
@@ -43,6 +44,10 @@
 : OF       ( -- )                 POSTPONE OVER POSTPONE = POSTPONE IF POSTPONE DROP ; IMMEDIATE
 : ENDOF    ( count -- count+1 )   POSTPONE ELSE 1 + ; IMMEDIATE
 : ENDCASE  ( count -- )           POSTPONE DROP BEGIN ?DUP WHILE 1 - POSTPONE THEN REPEAT ; IMMEDIATE
+
+\ Output / inspection helpers.
+: SPACES    ( n -- )  0 DO SPACE LOOP ;
+: ?         ( addr -- )  @ . ;
 
 \ String demos: ." prints inline, S" pushes (addr count) for TYPE.
 : HELLO     ( -- )  ." Hello, world!" CR ;

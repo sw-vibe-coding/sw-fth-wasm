@@ -4,7 +4,7 @@ Minimal plain HTML + JS + Rust/WASM prototype for a proto-Forth workbench.
 
 **Live demo:** <https://sw-vibe-coding.github.io/sw-fth-wasm/>
 
-![screenshot](images/screenshot.png?ts=1777232544997)
+![screenshot](images/screenshot.png?ts=1777236250349)
 
 ## What it does
 
