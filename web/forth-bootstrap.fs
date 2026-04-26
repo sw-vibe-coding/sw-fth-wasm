@@ -19,6 +19,7 @@
 : <=     ( a b -- flag )      > 0= ;
 : >=     ( a b -- flag )      < 0= ;
 : <>     ( a b -- flag )      = 0= ;
+: WITHIN ( n lo hi -- flag )  >R OVER <= SWAP R> < AND ;
 : MIN    ( a b -- min )       2DUP > IF SWAP THEN DROP ;
 : MAX    ( a b -- max )       2DUP < IF SWAP THEN DROP ;
 : VAR    ( -- )  CREATE 0 , ;

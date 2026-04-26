@@ -10,6 +10,9 @@
 
 ### UI
 
+- `web/forth-bootstrap.fs` adds `WITHIN ( n lo hi -- flag )` defined as
+  `>R OVER <= SWAP R> < AND`, exercising the new bitwise `AND` to
+  combine two flag conditions
 - `web/forth-bootstrap.fs` adds `<=`, `>=`, and `<>` (each is `<comparator> 0=`
   inverting the existing primitive flag) — completes the comparison family
 - `web/forth-bootstrap.fs` adds `2DUP`, `2DROP`, `2SWAP`, `MIN`, and `MAX`
@@ -35,6 +38,10 @@
   reads whitespace-delimited tokens normally and switches to char-by-char
   mode after `."` to capture everything up to the closing `"`. Bootstrap
   gains a `: HELLO ." Hello, world!" CR ;` demo
+- Bitwise primitives `AND`, `OR`, `XOR`, `INVERT`. Two-int variants for
+  AND/OR/XOR using Rust `&` `|` `^`, INVERT does the standard Forth
+  one's-complement (Rust `!`). Forth's flag convention (-1 / 0) means
+  bitwise AND/OR also work as boolean AND/OR on flags
 - `( ... )` block comments: token processing now tracks `(`/`)` nesting
   depth via a new `run_tokens` helper; tokens inside block comments are
   skipped, and unmatched `)` or unclosed `(` produce diagnostic output

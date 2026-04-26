@@ -23,6 +23,10 @@ enum PrimitiveId {
     Eq,
     Lt,
     Gt,
+    And,
+    Or,
+    Xor,
+    Invert,
     Dot,
     DotS,
     Clear,
@@ -139,7 +143,7 @@ impl Machine {
             xt_table: Vec::new(),
             output: vec![
                 "Machine created.".to_string(),
-                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD /MOD */MOD = < > . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , LATEST IMMEDIATE CREATE".to_string(),
+                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD /MOD */MOD = < > AND OR XOR INVERT . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , LATEST IMMEDIATE CREATE".to_string(),
                 "Compile: : ; :NONAME IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO LOOP +LOOP LEAVE [ ] LITERAL DOES> POSTPONE .\"".to_string(),
                 "Interactive: SEE <word> | VARIABLE <name> | <val> CONSTANT <name> | ' <word>".to_string(),
             ],
@@ -342,6 +346,10 @@ impl Machine {
             ("=", PrimitiveId::Eq),
             ("<", PrimitiveId::Lt),
             (">", PrimitiveId::Gt),
+            ("AND", PrimitiveId::And),
+            ("OR", PrimitiveId::Or),
+            ("XOR", PrimitiveId::Xor),
+            ("INVERT", PrimitiveId::Invert),
             (".", PrimitiveId::Dot),
             (".S", PrimitiveId::DotS),
             ("CLEAR", PrimitiveId::Clear),
@@ -1188,6 +1196,10 @@ impl Machine {
             PrimitiveId::Eq => self.prim_eq(),
             PrimitiveId::Lt => self.prim_lt(),
             PrimitiveId::Gt => self.prim_gt(),
+            PrimitiveId::And => self.prim_and(),
+            PrimitiveId::Or => self.prim_or(),
+            PrimitiveId::Xor => self.prim_xor(),
+            PrimitiveId::Invert => self.prim_invert(),
             PrimitiveId::Dot => self.prim_dot(),
             PrimitiveId::DotS => self.prim_dot_s(),
             PrimitiveId::Clear => self.prim_clear(),
@@ -1614,6 +1626,40 @@ impl Machine {
                 self.stack.push(Value::Int(if a > b { -1 } else { 0 }));
             }
             _ => self.output.push(">: need two ints".to_string()),
+        }
+    }
+
+    fn prim_and(&mut self) {
+        let b = self.pop_int();
+        let a = self.pop_int();
+        match (a, b) {
+            (Some(a), Some(b)) => self.stack.push(Value::Int(a & b)),
+            _ => self.output.push("AND: need two ints".to_string()),
+        }
+    }
+
+    fn prim_or(&mut self) {
+        let b = self.pop_int();
+        let a = self.pop_int();
+        match (a, b) {
+            (Some(a), Some(b)) => self.stack.push(Value::Int(a | b)),
+            _ => self.output.push("OR: need two ints".to_string()),
+        }
+    }
+
+    fn prim_xor(&mut self) {
+        let b = self.pop_int();
+        let a = self.pop_int();
+        match (a, b) {
+            (Some(a), Some(b)) => self.stack.push(Value::Int(a ^ b)),
+            _ => self.output.push("XOR: need two ints".to_string()),
+        }
+    }
+
+    fn prim_invert(&mut self) {
+        match self.pop_int() {
+            Some(n) => self.stack.push(Value::Int(!n)),
+            None => self.output.push("INVERT: stack empty".to_string()),
         }
     }
 
