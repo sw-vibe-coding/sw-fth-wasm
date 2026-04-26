@@ -15,6 +15,10 @@
   built on top of the kernel's `LATEST` + `COMPILE,` primitives. Lets
   `: FACT DUP 1 > IF DUP 1 - RECURSE * THEN ;` work without depending
   on FACT being in the dictionary mid-compile
+- `web/forth-bootstrap.fs` gains a `FIZZBUZZ` demo word — a real
+  program built entirely from the workbench's vocabulary (nested
+  IF/ELSE/THEN, MOD, ?DO/LOOP, `.`, `."`). Demonstrates that the
+  bootstrap layer is up to non-trivial work without kernel additions
 - `web/forth-bootstrap.fs` gains five more pure-Forth helpers: `1+`, `1-`,
   `2OVER`, `BOUNDS` (`addr count -- end addr` for memory iteration), and
   `MOVE` (`src dst count -- ` forward cell copy). `2OVER` is built from

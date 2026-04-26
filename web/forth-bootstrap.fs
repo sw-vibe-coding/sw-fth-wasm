@@ -61,3 +61,16 @@
 \ String demos: ." prints inline, S" pushes (addr count) for TYPE.
 : HELLO     ( -- )  ." Hello, world!" CR ;
 : GREETING  ( -- )  S" Hello from S-quote and TYPE." TYPE CR ;
+
+\ A real-program demo built from the workbench's own vocabulary —
+\ nested IF/ELSE/THEN, MOD, ?DO/LOOP, ., string literals.
+\   15 FIZZBUZZ
+\   -> 1 2 Fizz 4 Buzz Fizz 7 8 Fizz Buzz 11 Fizz 13 14 FizzBuzz
+: FIZZBUZZ  ( n -- )
+  1+ 1 ?DO
+    I 15 MOD 0= IF      ." FizzBuzz "
+    ELSE I 3 MOD 0= IF  ." Fizz "
+    ELSE I 5 MOD 0= IF  ." Buzz "
+    ELSE I .
+    THEN THEN THEN
+  LOOP CR ;
