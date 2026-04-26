@@ -25,6 +25,12 @@
 
 ### Language features
 
+- `."` (string-print): in compile mode emits `OpKind::PrintStr(String)` that
+  appends the captured literal to `output_line` at run time; in interpret mode
+  appends directly. The token loop is now a hand-rolled char walker that
+  reads whitespace-delimited tokens normally and switches to char-by-char
+  mode after `."` to capture everything up to the closing `"`. Bootstrap
+  gains a `: HELLO ." Hello, world!" CR ;` demo
 - `( ... )` block comments: token processing now tracks `(`/`)` nesting
   depth via a new `run_tokens` helper; tokens inside block comments are
   skipped, and unmatched `)` or unclosed `(` produce diagnostic output

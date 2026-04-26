@@ -88,6 +88,7 @@ enum OpKind {
     LeaveLoop(usize),
     Does,
     PostponeCall(String),
+    PrintStr(String),
 }
 
 #[derive(Clone, Debug)]
@@ -139,7 +140,7 @@ impl Machine {
             output: vec![
                 "Machine created.".to_string(),
                 "Primitives: DUP SWAP DROP OVER ROT + - * / MOD /MOD */MOD = < > . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , LATEST IMMEDIATE CREATE".to_string(),
-                "Compile: : ; :NONAME IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO LOOP +LOOP LEAVE [ ] LITERAL DOES> POSTPONE".to_string(),
+                "Compile: : ; :NONAME IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO LOOP +LOOP LEAVE [ ] LITERAL DOES> POSTPONE .\"".to_string(),
                 "Interactive: SEE <word> | VARIABLE <name> | <val> CONSTANT <name> | ' <word>".to_string(),
             ],
             output_line: String::new(),
@@ -244,33 +245,83 @@ impl Machine {
 
 impl Machine {
     fn run_tokens(&mut self, src: &str) {
+        let chars: Vec<char> = src.chars().collect();
+        let mut i = 0;
         let mut comment_depth: u32 = 0;
-        for sub in src.lines() {
-            for token in sub.split_whitespace() {
-                if token == "\\" {
-                    break;
-                }
-                if token == "(" {
-                    comment_depth += 1;
-                    continue;
-                }
-                if token == ")" {
-                    if comment_depth > 0 {
-                        comment_depth -= 1;
-                    } else {
-                        self.output.push("): unmatched".to_string());
-                    }
-                    continue;
-                }
-                if comment_depth > 0 {
-                    continue;
-                }
-                self.dispatch_token(token);
+        while i < chars.len() {
+            // Skip whitespace
+            while i < chars.len() && chars[i].is_whitespace() {
+                i += 1;
             }
+            if i >= chars.len() {
+                break;
+            }
+            // Extract one whitespace-delimited token
+            let start = i;
+            while i < chars.len() && !chars[i].is_whitespace() {
+                i += 1;
+            }
+            let token: String = chars[start..i].iter().collect();
+
+            // Line comment: skip to end of line
+            if token == "\\" {
+                while i < chars.len() && chars[i] != '\n' {
+                    i += 1;
+                }
+                continue;
+            }
+            if token == "(" {
+                comment_depth += 1;
+                continue;
+            }
+            if token == ")" {
+                if comment_depth > 0 {
+                    comment_depth -= 1;
+                } else {
+                    self.output.push("): unmatched".to_string());
+                }
+                continue;
+            }
+            if comment_depth > 0 {
+                continue;
+            }
+            // .": scan until closing " (whitespace-tolerant)
+            if token == ".\"" {
+                while i < chars.len() && chars[i].is_whitespace() {
+                    i += 1;
+                }
+                let mut s = String::new();
+                while i < chars.len() && chars[i] != '"' {
+                    s.push(chars[i]);
+                    i += 1;
+                }
+                if i < chars.len() {
+                    i += 1; // skip closing "
+                } else {
+                    self.output
+                        .push(".\": missing closing quote".to_string());
+                }
+                self.handle_print_string(s);
+                continue;
+            }
+            self.dispatch_token(&token);
         }
         if comment_depth > 0 {
             self.output
                 .push(format!("(: unclosed ({} open)", comment_depth));
+        }
+    }
+
+    fn handle_print_string(&mut self, s: String) {
+        if self.compiling.is_some() {
+            let label = format!(".\" {}\"", s);
+            let p = self.compiling.as_mut().unwrap();
+            p.body.push(Op {
+                label,
+                kind: OpKind::PrintStr(s),
+            });
+        } else {
+            self.output_line.push_str(&s);
         }
     }
 
@@ -1111,6 +1162,10 @@ impl Machine {
                     self.output
                         .push(format!("POSTPONE: not compiling, cannot postpone {}", name));
                 }
+                self.emit_trace(&op.label);
+            }
+            OpKind::PrintStr(s) => {
+                self.output_line.push_str(s);
                 self.emit_trace(&op.label);
             }
         }

@@ -15,3 +15,6 @@
 : */     ( a b c -- a*b/c ) * / ;
 : VAR    ( -- )  CREATE 0 , ;
 : CONST  ( n -- )  CREATE , DOES> @ ;
+
+\ A small string demo using the new ." word.
+: HELLO  ( -- )  ." Hello, world!" CR ;
