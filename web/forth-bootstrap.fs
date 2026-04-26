@@ -34,5 +34,15 @@
 : HEX      ( -- )  16 BASE ! ;
 : DECIMAL  ( -- )  10 BASE ! ;
 
+\ Forth-style switch/case. Built entirely from POSTPONE + IF/ELSE/THEN +
+\ BEGIN/?DUP/WHILE/REPEAT — no Rust changes were needed for this.
+\ CASE pushes a 0 marker on the compile-time data stack; each ENDOF
+\ increments the count; ENDCASE pops one CF entry per count and patches
+\ all the ELSE jumps to point past the default body.
+: CASE     ( -- )                 0 ; IMMEDIATE
+: OF       ( -- )                 POSTPONE OVER POSTPONE = POSTPONE IF POSTPONE DROP ; IMMEDIATE
+: ENDOF    ( count -- count+1 )   POSTPONE ELSE 1 + ; IMMEDIATE
+: ENDCASE  ( count -- )           POSTPONE DROP BEGIN ?DUP WHILE 1 - POSTPONE THEN REPEAT ; IMMEDIATE
+
 \ A small string demo using the new ." word.
 : HELLO  ( -- )  ." Hello, world!" CR ;

@@ -15,6 +15,15 @@
   built on top of the kernel's `LATEST` + `COMPILE,` primitives. Lets
   `: FACT DUP 1 > IF DUP 1 - RECURSE * THEN ;` work without depending
   on FACT being in the dictionary mid-compile
+- `web/forth-bootstrap.fs` adds Forth-style `CASE` / `OF` / `ENDOF` /
+  `ENDCASE` — implemented entirely in user-space Forth via `POSTPONE` of
+  the now-dict-resident `IF` / `ELSE` / `THEN` / `BEGIN` / `WHILE` /
+  `REPEAT`. CASE pushes a 0 marker on the compile-time data stack;
+  ENDOF increments the count after invoking ELSE; ENDCASE pops one
+  control-flow entry per count via `BEGIN ?DUP WHILE 1 - POSTPONE THEN
+  REPEAT`. First real demonstration that the kernel's compiler is
+  user-extensible — adding new control structures no longer requires
+  touching Rust
 - `web/forth-bootstrap.fs` adds `WITHIN ( n lo hi -- flag )` defined as
   `>R OVER <= SWAP R> < AND`, exercising the new bitwise `AND` to
   combine two flag conditions
