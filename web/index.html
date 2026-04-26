@@ -42,6 +42,24 @@
     button:hover { border-color: #73b7ff; }
     label { display: block; margin-bottom: 6px; font-weight: 600; }
     .note { color: #a9bbcf; font-size: 14px; margin-bottom: 16px; }
+    .pane-header {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .pane-header label { margin-bottom: 0; }
+    .pane-header input.filter {
+      flex: 1;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      border: 1px solid #2c3545;
+      background: #0c1017;
+      color: #dbe7f3;
+    }
+    .pane-header input.filter::placeholder { color: #4d5a73; }
     @media (max-width: 900px) {
       .grid { grid-template-columns: 1fr; }
     }
@@ -137,7 +155,10 @@
       <textarea id="historyPane" readonly></textarea>
     </div>
     <div>
-      <label for="tracePane">Trace</label>
+      <div class="pane-header">
+        <label for="tracePane">Trace</label>
+        <input id="traceFilter" class="filter" type="text" placeholder="filter trace (substring, case-insensitive)">
+      </div>
       <textarea id="tracePane" readonly></textarea>
     </div>
     <div>

@@ -3,12 +3,21 @@ import init, { Machine } from "./pkg/proto_forth_wasm.js";
 let machine = null;
 
 function render() {
+  const filterEl = document.getElementById("traceFilter");
+  const filter = filterEl ? filterEl.value.trim().toLowerCase() : "";
+  const fullTrace = machine.get_trace_text();
+  const traceText = filter
+    ? fullTrace
+        .split("\n")
+        .filter((line) => line.toLowerCase().includes(filter))
+        .join("\n")
+    : fullTrace;
   const panes = [
     ["stackPane", machine.get_stack_text()],
     ["dictPane", machine.get_dictionary_text()],
     ["outputPane", machine.get_output_text()],
     ["historyPane", machine.get_history_text()],
-    ["tracePane", machine.get_trace_text()],
+    ["tracePane", traceText],
     ["memoryPane", machine.get_memory_text()],
   ];
   for (const [id, text] of panes) {
@@ -30,6 +39,7 @@ function substituteBuildInfo() {
 const STORAGE_KEY_SOURCE = "sw-fth-wasm:source";
 const STORAGE_KEY_REPL = "sw-fth-wasm:repl";
 const STORAGE_KEY_STATE = "sw-fth-wasm:state";
+const STORAGE_KEY_TRACE_FILTER = "sw-fth-wasm:trace-filter";
 
 function restoreFromStorage(el, key) {
   try {
@@ -99,10 +109,16 @@ async function main() {
 
   const repl = document.getElementById("repl");
   const sourcePane = document.getElementById("sourcePane");
+  const traceFilter = document.getElementById("traceFilter");
   const sourceRestored = restoreFromStorage(sourcePane, STORAGE_KEY_SOURCE);
   restoreFromStorage(repl, STORAGE_KEY_REPL);
+  if (traceFilter) restoreFromStorage(traceFilter, STORAGE_KEY_TRACE_FILTER);
   persistOnInput(sourcePane, STORAGE_KEY_SOURCE);
   persistOnInput(repl, STORAGE_KEY_REPL);
+  if (traceFilter) {
+    persistOnInput(traceFilter, STORAGE_KEY_TRACE_FILTER);
+    traceFilter.addEventListener("input", render);
+  }
 
   // Fetch bootstrap source in parallel with WASM init
   const [bootstrap] = await Promise.all([loadBootstrap(), init()]);

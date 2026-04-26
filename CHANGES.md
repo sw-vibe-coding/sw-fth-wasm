@@ -195,6 +195,13 @@
 
 ### UI
 
+- Trace pane gets a filter input ("filter trace (substring,
+  case-insensitive)"). Each render passes the trace text through a
+  `String.prototype.split('\n').filter(...)` pipeline so only lines
+  matching the current filter remain visible. The filter value is
+  persisted to localStorage at `sw-fth-wasm:trace-filter` and restored
+  on page load. Useful for narrowing a long trace to e.g. `dup`,
+  `[5`, or `I ` (interpret-mode lines)
 - Saved state is now versioned. New `STATE_VERSION` constant (currently
   `1`) is embedded in the JSON; `load_state` does a two-step deserialize
   (`VersionOnly` first) so a schema bump produces a clean
