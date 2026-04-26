@@ -43,6 +43,12 @@
   reads whitespace-delimited tokens normally and switches to char-by-char
   mode after `."` to capture everything up to the closing `"`. Bootstrap
   gains a `: HELLO ." Hello, world!" CR ;` demo
+- `BASE` variable (kernel-resident at `memory[0]`, default `10`): controls
+  the radix used by `.` / `.S` for output and by literal parsing in both
+  interpret and compile modes. New `current_base()` and `format_int()`
+  helpers; literal parsing now goes through `parse_literal()` which calls
+  `i32::from_str_radix(token, base)`. Bootstrap exposes `: HEX 16 BASE ! ;`
+  and `: DECIMAL 10 BASE ! ;` for the conventional toggles
 - `LSHIFT` and `RSHIFT` bit-shift primitives. Both use Rust's
   `wrapping_shl` / `wrapping_shr` on the unsigned cast so out-of-range
   shift counts wrap modulo 32 instead of panicking. RSHIFT is the

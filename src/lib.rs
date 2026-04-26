@@ -146,7 +146,7 @@ impl Machine {
             xt_table: Vec::new(),
             output: vec![
                 "Machine created.".to_string(),
-                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD /MOD */MOD = < > AND OR XOR INVERT LSHIFT RSHIFT . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , COMPILE, LATEST IMMEDIATE CREATE".to_string(),
+                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD /MOD */MOD = < > AND OR XOR INVERT LSHIFT RSHIFT . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , COMPILE, LATEST IMMEDIATE CREATE BASE".to_string(),
                 "Compile: : ; :NONAME IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO LOOP +LOOP LEAVE [ ] LITERAL DOES> POSTPONE .\"".to_string(),
                 "Interactive: SEE <word> | VARIABLE <name> | <val> CONSTANT <name> | ' <word>".to_string(),
             ],
@@ -332,6 +332,48 @@ impl Machine {
         }
     }
 
+    fn current_base(&self) -> u32 {
+        match self.memory.first() {
+            Some(Value::Int(b)) if *b >= 2 && *b <= 36 => *b as u32,
+            _ => 10,
+        }
+    }
+
+    fn format_int(n: i32, base: u32) -> String {
+        if !(2..=36).contains(&base) {
+            return n.to_string();
+        }
+        let mag: u32 = if n < 0 {
+            (n as i64).unsigned_abs() as u32
+        } else {
+            n as u32
+        };
+        if mag == 0 {
+            return "0".to_string();
+        }
+        let mut digits = String::new();
+        let mut x = mag;
+        while x > 0 {
+            let d = (x % base) as u8;
+            digits.push(if d < 10 {
+                (b'0' + d) as char
+            } else {
+                (b'A' + d - 10) as char
+            });
+            x /= base;
+        }
+        let body: String = digits.chars().rev().collect();
+        if n < 0 {
+            format!("-{}", body)
+        } else {
+            body
+        }
+    }
+
+    fn parse_literal(&self, token: &str) -> Option<i32> {
+        i32::from_str_radix(token, self.current_base()).ok()
+    }
+
     fn install_primitives(&mut self) {
         let entries: &[(&str, PrimitiveId)] = &[
             ("DUP", PrimitiveId::Dup),
@@ -382,6 +424,10 @@ impl Machine {
         for (name, id) in entries {
             self.define_word((*name).to_string(), Word::Primitive(*id));
         }
+        // BASE: kernel-resident variable at memory[0] (default radix 10).
+        let base_addr = self.memory.len() as i32;
+        self.memory.push(Value::Int(10));
+        self.define_word("BASE".to_string(), Word::Variable(base_addr));
     }
 
     fn define_word(&mut self, name: String, word: Word) {
@@ -490,7 +536,7 @@ impl Machine {
             return;
         }
 
-        if let Ok(n) = token.parse::<i32>() {
+        if let Some(n) = self.parse_literal(token) {
             self.stack.push(Value::Int(n));
             return;
         }
@@ -968,7 +1014,7 @@ impl Machine {
     }
 
     fn compile_token(&self, token: &str, upper: &str) -> Op {
-        if let Ok(n) = token.parse::<i32>() {
+        if let Some(n) = self.parse_literal(token) {
             return Op {
                 label: token.to_string(),
                 kind: OpKind::PushInt(n),
@@ -1340,7 +1386,11 @@ impl Machine {
 
     fn prim_dot(&mut self) {
         match self.pop_int() {
-            Some(n) => self.output_line.push_str(&format!("{} ", n)),
+            Some(n) => {
+                let base = self.current_base();
+                self.output_line
+                    .push_str(&format!("{} ", Self::format_int(n, base)));
+            }
             None => self.output.push(".: stack empty".to_string()),
         }
     }
@@ -1353,11 +1403,12 @@ impl Machine {
     }
 
     fn prim_dot_s(&mut self) {
+        let base = self.current_base();
         let rendered = self
             .stack
             .iter()
             .map(|v| match v {
-                Value::Int(n) => n.to_string(),
+                Value::Int(n) => Self::format_int(*n, base),
             })
             .collect::<Vec<_>>()
             .join(" ");

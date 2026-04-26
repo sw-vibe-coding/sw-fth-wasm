@@ -29,5 +29,10 @@
 \ for self-recursive references that don't depend on dict insertion order.
 : RECURSE  ( -- )  LATEST COMPILE, ; IMMEDIATE
 
+\ Number-base helpers: BASE is a kernel-resident variable at memory[0].
+\ . / .S / literal parsing all consult it.
+: HEX      ( -- )  16 BASE ! ;
+: DECIMAL  ( -- )  10 BASE ! ;
+
 \ A small string demo using the new ." word.
 : HELLO  ( -- )  ." Hello, world!" CR ;
