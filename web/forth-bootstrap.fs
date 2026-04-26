@@ -13,6 +13,11 @@
 : TUCK   ( a b -- b a b ) SWAP OVER ;
 : ?DUP   ( n -- n n | 0 )   DUP IF DUP THEN ;
 : */     ( a b c -- a*b/c ) * / ;
+: 2DUP   ( a b -- a b a b )   OVER OVER ;
+: 2DROP  ( a b -- )           DROP DROP ;
+: 2SWAP  ( a b c d -- c d a b )  ROT >R ROT R> ;
+: MIN    ( a b -- min )       2DUP > IF SWAP THEN DROP ;
+: MAX    ( a b -- max )       2DUP < IF SWAP THEN DROP ;
 : VAR    ( -- )  CREATE 0 , ;
 : CONST  ( n -- )  CREATE , DOES> @ ;
 

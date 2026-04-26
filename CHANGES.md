@@ -10,6 +10,8 @@
 
 ### UI
 
+- `web/forth-bootstrap.fs` adds `2DUP`, `2DROP`, `2SWAP`, `MIN`, and `MAX`
+  alongside the existing helpers, plus a `HELLO` example exercising `."`
 - `web/forth-bootstrap.fs`: a Forth-source kernel-extension file with
   `NEGATE`, `ABS`, `0=`, `0<`, `NIP`, `TUCK`, `?DUP`, `*/`, `VAR`,
   `CONST`, each annotated with a stack-effect comment.
