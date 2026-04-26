@@ -5,7 +5,7 @@ use wasm_bindgen::prelude::*;
 /// Bumped whenever the saved-state schema changes (new OpKind / Word /
 /// PrimitiveId variants, renamed fields, etc.). Older snapshots are
 /// rejected at load time and the user is steered back to a fresh boot.
-const STATE_VERSION: u32 = 1;
+const STATE_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 enum Value {
@@ -120,7 +120,6 @@ enum OpKind {
     LeaveLoop(usize),
     Does,
     PostponeCall(String),
-    PrintStr(String),
     SLiteral { addr: i32, count: i32 },
     AbortStr(String),
 }
@@ -474,11 +473,23 @@ impl Machine {
 
     fn handle_print_string(&mut self, s: String) {
         if self.compiling.is_some() {
-            let label = format!(".\" {}\"", s);
+            // Compile `." text"` as `S" text" TYPE`: deposit the chars at
+            // HERE, emit SLiteral(addr, count), then a TYPE call. Same
+            // runtime effect as a hand-written `S" text" TYPE`, no
+            // dedicated PrintStr opcode required.
+            let addr = self.memory.len() as i32;
+            for c in s.chars() {
+                self.memory.push(Value::Int(c as i32));
+            }
+            let count = s.chars().count() as i32;
             let p = self.compiling.as_mut().unwrap();
             p.body.push(Op {
-                label,
-                kind: OpKind::PrintStr(s),
+                label: format!(".\" {}\"", s),
+                kind: OpKind::SLiteral { addr, count },
+            });
+            p.body.push(Op {
+                label: "TYPE".to_string(),
+                kind: OpKind::CallPrim(PrimitiveId::Type),
             });
         } else {
             self.output_line.push_str(&s);
@@ -1295,10 +1306,6 @@ impl Machine {
                         kind: OpKind::CallByName(name.clone()),
                     });
                 }
-                self.emit_trace(&op.label);
-            }
-            OpKind::PrintStr(s) => {
-                self.output_line.push_str(s);
                 self.emit_trace(&op.label);
             }
             OpKind::SLiteral { addr, count } => {

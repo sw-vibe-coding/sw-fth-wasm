@@ -74,6 +74,11 @@
   starting at `addr`, casts each to a Unicode codepoint, and appends the
   characters to `output_line`. SEE labels are `S" <text>"` so the body
   decompiles legibly. Bootstrap gains a `GREETING` demo using S" + TYPE
+- `."` is now compiled as `S" text" TYPE` under the hood — `OpKind::PrintStr`
+  is removed in favour of the existing `SLiteral` + `CallPrim(Type)` pair.
+  Behaviour is unchanged for users; SEE shows the same `." text"` label.
+  STATE_VERSION bumped to 2 so any saved state from before this refactor
+  is rejected and the bootstrap takes over
 - `."` (string-print): in compile mode emits `OpKind::PrintStr(String)` that
   appends the captured literal to `output_line` at run time; in interpret mode
   appends directly. The token loop is now a hand-rolled char walker that
