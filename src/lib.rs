@@ -70,6 +70,7 @@ enum PrimitiveId {
     Postpone,
     Type,
     Abort,
+    Exit,
 }
 
 #[derive(Clone, Debug)]
@@ -154,6 +155,7 @@ pub struct Machine {
     pending_does: Option<Vec<Op>>,
     anon_counter: u32,
     aborting: bool,
+    exiting: bool,
 }
 
 #[wasm_bindgen]
@@ -167,7 +169,7 @@ impl Machine {
             xt_table: Vec::new(),
             output: vec![
                 "Machine created.".to_string(),
-                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD /MOD */MOD = < > AND OR XOR INVERT LSHIFT RSHIFT . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , COMPILE, LATEST IMMEDIATE CREATE BASE TYPE ABORT".to_string(),
+                "Primitives: DUP SWAP DROP OVER ROT + - * / MOD /MOD */MOD = < > AND OR XOR INVERT LSHIFT RSHIFT . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , COMPILE, LATEST IMMEDIATE CREATE BASE TYPE ABORT EXIT".to_string(),
                 "Compile: : ; :NONAME IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO LOOP +LOOP LEAVE [ ] LITERAL DOES> POSTPONE .\" S\" ABORT\"".to_string(),
                 "Interactive: SEE <word> | VARIABLE <name> | <val> CONSTANT <name> | ' <word>".to_string(),
             ],
@@ -183,6 +185,7 @@ impl Machine {
             pending_does: None,
             anon_counter: 0,
             aborting: false,
+            exiting: false,
         };
         m.install_primitives();
         m
@@ -197,6 +200,7 @@ impl Machine {
         self.pending_does = None;
         self.output_line.clear();
         self.aborting = false;
+        self.exiting = false;
         self.output.push("VM reset.".to_string());
         self.history.push("--- reset ---".to_string());
         self.trace.push("--- reset ---".to_string());
@@ -212,6 +216,7 @@ impl Machine {
         self.run_tokens(line);
         self.flush_output_line();
         self.aborting = false;
+        self.exiting = false;
     }
 
     pub fn load_source(&mut self, src: &str) {
@@ -228,6 +233,7 @@ impl Machine {
                 .push(format!("Loaded source ({} chars).", src.len()));
         }
         self.aborting = false;
+        self.exiting = false;
     }
 
     pub fn get_stack_text(&self) -> String {
@@ -560,6 +566,7 @@ impl Machine {
             ("CREATE", PrimitiveId::Create),
             ("TYPE", PrimitiveId::Type),
             ("ABORT", PrimitiveId::Abort),
+            ("EXIT", PrimitiveId::Exit),
         ];
         for (name, id) in entries {
             self.define_word((*name).to_string(), Word::Primitive(*id));
@@ -1007,6 +1014,14 @@ impl Machine {
                 }
                 Some(op) => self.exec_op_vm(&op, &mut frames),
             }
+            if self.exiting {
+                self.exiting = false;
+                if let Some(popped) = frames.pop() {
+                    if let Some(label) = popped.return_label {
+                        self.emit_trace(&label);
+                    }
+                }
+            }
         }
     }
 
@@ -1265,6 +1280,7 @@ impl Machine {
             PrimitiveId::Postpone => self.prim_postpone(),
             PrimitiveId::Type => self.prim_type(),
             PrimitiveId::Abort => self.do_abort(),
+            PrimitiveId::Exit => self.exiting = true,
             PrimitiveId::Dot => self.prim_dot(),
             PrimitiveId::DotS => self.prim_dot_s(),
             PrimitiveId::Clear => self.prim_clear(),

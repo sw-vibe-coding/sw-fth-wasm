@@ -48,6 +48,11 @@
 
 ### Language features
 
+- `EXIT`: early-return primitive. Sets `Machine.exiting`; the `run_user`
+  loop pops the current frame at the next iteration boundary, so a word
+  can return early without unwinding the whole stack the way `ABORT`
+  does. Cleared by `eval_repl` / `load_source` / `reset` so a stale
+  flag never leaks across invocations
 - `ABORT` and `ABORT"`: error-unwind primitives. New `Machine.aborting`
   flag is checked at every iteration of `run_user`'s VM loop and
   `run_tokens`' token loop; both unwind cleanly when set. `ABORT` clears
