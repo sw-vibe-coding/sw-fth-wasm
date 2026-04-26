@@ -62,6 +62,11 @@
 
 ### Language features
 
+- `DEPTH ( -- n )` and `RDEPTH ( -- n )`: push the current data and
+  return stack heights. Useful for diagnostics, defensive code, and
+  tooling like a "depth probe" word that asserts a fixed delta around
+  a definition. PrimitiveId additions only — no schema bump because
+  PrimitiveId variants are written by name in the JSON tagging
 - `?DO`: like `DO` but skips the body when `start >= limit`. New
   `OpKind::LoopEnterCheck { skip_target }`; the matching `LOOP` /
   `+LOOP` patches the skip target to the position past the loop end so

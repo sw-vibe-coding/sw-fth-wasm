@@ -80,6 +80,8 @@ enum PrimitiveId {
     QDo,
     Pick,
     Roll,
+    Depth,
+    RDepth,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -178,7 +180,7 @@ impl Machine {
             xt_table: Vec::new(),
             output: vec![
                 "Machine created.".to_string(),
-                "Primitives: DUP SWAP DROP OVER ROT PICK ROLL + - * / MOD /MOD */MOD = < > AND OR XOR INVERT LSHIFT RSHIFT . .S CLEAR >R R> R@ @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , COMPILE, LATEST IMMEDIATE CREATE BASE TYPE ABORT EXIT".to_string(),
+                "Primitives: DUP SWAP DROP OVER ROT PICK ROLL DEPTH + - * / MOD /MOD */MOD = < > AND OR XOR INVERT LSHIFT RSHIFT . .S CLEAR >R R> R@ RDEPTH @ ! +! WORDS CR EMIT SPACE I J ALLOT EXECUTE HERE , COMPILE, LATEST IMMEDIATE CREATE BASE TYPE ABORT EXIT".to_string(),
                 "Compile: : ; :NONAME IF ELSE THEN BEGIN UNTIL WHILE REPEAT DO ?DO LOOP +LOOP LEAVE [ ] LITERAL DOES> POSTPONE .\" S\" ABORT\"".to_string(),
                 "Interactive: SEE <word> | VARIABLE <name> | <val> CONSTANT <name> | ' <word>".to_string(),
             ],
@@ -664,6 +666,8 @@ impl Machine {
             ("?DO", PrimitiveId::QDo),
             ("PICK", PrimitiveId::Pick),
             ("ROLL", PrimitiveId::Roll),
+            ("DEPTH", PrimitiveId::Depth),
+            ("RDEPTH", PrimitiveId::RDepth),
         ];
         for (name, id) in entries {
             self.define_word((*name).to_string(), Word::Primitive(*id));
@@ -1399,6 +1403,12 @@ impl Machine {
             PrimitiveId::QDo => self.prim_q_do(),
             PrimitiveId::Pick => self.prim_pick(),
             PrimitiveId::Roll => self.prim_roll(),
+            PrimitiveId::Depth => self
+                .stack
+                .push(Value::Int(self.stack.len() as i32)),
+            PrimitiveId::RDepth => self
+                .stack
+                .push(Value::Int(self.return_stack.len() as i32)),
             PrimitiveId::Dot => self.prim_dot(),
             PrimitiveId::DotS => self.prim_dot_s(),
             PrimitiveId::Clear => self.prim_clear(),
