@@ -43,6 +43,17 @@
   reads whitespace-delimited tokens normally and switches to char-by-char
   mode after `."` to capture everything up to the closing `"`. Bootstrap
   gains a `: HELLO ." Hello, world!" CR ;` demo
+- Compile-mode helpers refactored from hardcoded `dispatch_compile` checks
+  into dict-resident `IMMEDIATE` primitives: `IF`, `ELSE`, `THEN`, `BEGIN`,
+  `UNTIL`, `WHILE`, `REPEAT`, `DO`, `LOOP`, `+LOOP`, `LEAVE`, `[`, `]`,
+  `LITERAL`, `DOES>`, `POSTPONE`. Each is a `PrimitiveId` with a `prim_*`
+  method that does the same body/cf_stack/leave_stack mutations the old
+  special-case did. They appear in `WORDS` and `SEE` (with `IMMEDIATE`
+  annotation), and crucially are now `POSTPONE`-able from user-space
+  immediate words. `OpKind::PostponeCall` execution checks
+  `immediate_words` and either executes the target inline (for immediate
+  names — the standard semantics) or splices a `CallByName` into the
+  outer body (for non-immediate names)
 - `BASE` variable (kernel-resident at `memory[0]`, default `10`): controls
   the radix used by `.` / `.S` for output and by literal parsing in both
   interpret and compile modes. New `current_base()` and `format_int()`

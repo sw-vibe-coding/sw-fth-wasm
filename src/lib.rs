@@ -52,6 +52,22 @@ enum PrimitiveId {
     Latest,
     Immediate,
     Create,
+    If,
+    Else,
+    Then,
+    Begin,
+    Until,
+    While,
+    Repeat,
+    Do,
+    LoopPrim,
+    PlusLoop,
+    LeavePrim,
+    LBracket,
+    RBracket,
+    Literal,
+    DoesArrow,
+    Postpone,
 }
 
 #[derive(Clone, Debug)]
@@ -398,6 +414,22 @@ impl Machine {
             ("LSHIFT", PrimitiveId::LShift),
             ("RSHIFT", PrimitiveId::RShift),
             ("COMPILE,", PrimitiveId::CompileComma),
+            ("IF", PrimitiveId::If),
+            ("ELSE", PrimitiveId::Else),
+            ("THEN", PrimitiveId::Then),
+            ("BEGIN", PrimitiveId::Begin),
+            ("UNTIL", PrimitiveId::Until),
+            ("WHILE", PrimitiveId::While),
+            ("REPEAT", PrimitiveId::Repeat),
+            ("DO", PrimitiveId::Do),
+            ("LOOP", PrimitiveId::LoopPrim),
+            ("+LOOP", PrimitiveId::PlusLoop),
+            ("LEAVE", PrimitiveId::LeavePrim),
+            ("[", PrimitiveId::LBracket),
+            ("]", PrimitiveId::RBracket),
+            ("LITERAL", PrimitiveId::Literal),
+            ("DOES>", PrimitiveId::DoesArrow),
+            ("POSTPONE", PrimitiveId::Postpone),
             (".", PrimitiveId::Dot),
             (".S", PrimitiveId::DotS),
             ("CLEAR", PrimitiveId::Clear),
@@ -423,6 +455,14 @@ impl Machine {
         ];
         for (name, id) in entries {
             self.define_word((*name).to_string(), Word::Primitive(*id));
+        }
+        // Compile-mode helpers — IMMEDIATE in standard Forth, except `]`
+        // which is a normal word that resumes compilation.
+        for name in [
+            "IF", "ELSE", "THEN", "BEGIN", "UNTIL", "WHILE", "REPEAT", "DO", "LOOP",
+            "+LOOP", "LEAVE", "[", "LITERAL", "DOES>", "POSTPONE",
+        ] {
+            self.immediate_words.insert(name.to_string());
         }
         // BASE: kernel-resident variable at memory[0] (default radix 10).
         let base_addr = self.memory.len() as i32;
@@ -470,20 +510,6 @@ impl Machine {
 
         if self.compiling.is_some() {
             self.dispatch_compile(token, &upper);
-            return;
-        }
-
-        if upper == "]" {
-            match self.paused_compile.take() {
-                Some(p) => self.compiling = Some(p),
-                None => self.output.push("]: not paused".to_string()),
-            }
-            return;
-        }
-
-        if upper == "DOES>" {
-            self.output
-                .push("DOES>: only valid inside : ... ;".to_string());
             return;
         }
 
@@ -696,204 +722,13 @@ impl Machine {
             return;
         }
 
-        if upper == "IF" {
-            let p = self.compiling.as_mut().unwrap();
-            let idx = p.body.len();
-            p.body.push(Op {
-                label: "IF".to_string(),
-                kind: OpKind::Branch0(0),
-            });
-            p.cf_stack.push(idx);
-            return;
-        }
-
-        if upper == "ELSE" {
-            let branch_idx = match self.compiling.as_mut().unwrap().cf_stack.pop() {
-                Some(i) => i,
-                None => {
-                    self.output.push("compile: ELSE without IF".to_string());
-                    return;
-                }
-            };
-            let p = self.compiling.as_mut().unwrap();
-            let jump_idx = p.body.len();
-            p.body.push(Op {
-                label: "ELSE".to_string(),
-                kind: OpKind::Jump(0),
-            });
-            let target = p.body.len();
-            if let OpKind::Branch0(t) = &mut p.body[branch_idx].kind {
-                *t = target;
-            }
-            p.cf_stack.push(jump_idx);
-            return;
-        }
-
-        if upper == "BEGIN" {
-            let p = self.compiling.as_mut().unwrap();
-            let idx = p.body.len();
-            p.body.push(Op {
-                label: "BEGIN".to_string(),
-                kind: OpKind::Noop,
-            });
-            p.cf_stack.push(idx);
-            return;
-        }
-
-        if upper == "[" {
-            self.paused_compile = self.compiling.take();
-            return;
-        }
-
-        if upper == "DOES>" {
-            let p = self.compiling.as_mut().unwrap();
-            p.body.push(Op {
-                label: "DOES>".to_string(),
-                kind: OpKind::Does,
-            });
-            return;
-        }
-
-        if upper == "POSTPONE" {
-            self.compiling.as_mut().unwrap().pending_postpone = true;
-            return;
-        }
-
-        if upper == "LITERAL" {
-            let n = match self.pop_int() {
-                Some(n) => n,
-                None => {
-                    self.output.push("LITERAL: stack empty".to_string());
-                    return;
-                }
-            };
-            let p = self.compiling.as_mut().unwrap();
-            p.body.push(Op {
-                label: n.to_string(),
-                kind: OpKind::PushInt(n),
-            });
-            return;
-        }
-
-        if upper == "DO" {
-            let p = self.compiling.as_mut().unwrap();
-            let idx = p.body.len();
-            p.body.push(Op {
-                label: "DO".to_string(),
-                kind: OpKind::LoopEnter,
-            });
-            p.cf_stack.push(idx);
-            p.leave_stack.push(Vec::new());
-            return;
-        }
-
-        if upper == "LOOP" {
-            self.close_do_loop("LOOP", false);
-            return;
-        }
-
-        if upper == "+LOOP" {
-            self.close_do_loop("+LOOP", true);
-            return;
-        }
-
-        if upper == "LEAVE" {
-            let p = self.compiling.as_mut().unwrap();
-            if p.leave_stack.is_empty() {
-                self.output.push("compile: LEAVE without DO".to_string());
-                return;
-            }
-            let idx = p.body.len();
-            p.body.push(Op {
-                label: "LEAVE".to_string(),
-                kind: OpKind::LeaveLoop(0),
-            });
-            let depth = p.leave_stack.len();
-            p.leave_stack[depth - 1].push(idx);
-            return;
-        }
-
-        if upper == "WHILE" {
-            let p = self.compiling.as_mut().unwrap();
-            let idx = p.body.len();
-            p.body.push(Op {
-                label: "WHILE".to_string(),
-                kind: OpKind::Branch0(0),
-            });
-            p.cf_stack.push(idx);
-            return;
-        }
-
-        if upper == "REPEAT" {
-            let (while_idx, begin_idx) = {
-                let cf = &mut self.compiling.as_mut().unwrap().cf_stack;
-                let w = match cf.pop() {
-                    Some(i) => i,
-                    None => {
-                        self.output.push("compile: REPEAT without WHILE".to_string());
-                        return;
-                    }
-                };
-                let b = match cf.pop() {
-                    Some(i) => i,
-                    None => {
-                        self.output.push("compile: REPEAT without BEGIN".to_string());
-                        // push WHILE idx back so '; ' sees unbalanced state
-                        cf.push(w);
-                        return;
-                    }
-                };
-                (w, b)
-            };
-            let p = self.compiling.as_mut().unwrap();
-            p.body.push(Op {
-                label: "REPEAT".to_string(),
-                kind: OpKind::Jump(begin_idx),
-            });
-            let target = p.body.len();
-            if let OpKind::Branch0(t) = &mut p.body[while_idx].kind {
-                *t = target;
-            }
-            return;
-        }
-
-        if upper == "UNTIL" {
-            let target = match self.compiling.as_mut().unwrap().cf_stack.pop() {
-                Some(i) => i,
-                None => {
-                    self.output.push("compile: UNTIL without BEGIN".to_string());
-                    return;
-                }
-            };
-            let p = self.compiling.as_mut().unwrap();
-            p.body.push(Op {
-                label: "UNTIL".to_string(),
-                kind: OpKind::Branch0(target),
-            });
-            return;
-        }
-
-        if upper == "THEN" {
-            let idx = match self.compiling.as_mut().unwrap().cf_stack.pop() {
-                Some(i) => i,
-                None => {
-                    self.output.push("compile: THEN without IF".to_string());
-                    return;
-                }
-            };
-            let p = self.compiling.as_mut().unwrap();
-            let target = p.body.len();
-            p.body.push(Op {
-                label: "THEN".to_string(),
-                kind: OpKind::Noop,
-            });
-            match &mut p.body[idx].kind {
-                OpKind::Branch0(t) | OpKind::Jump(t) => *t = target,
-                _ => {}
-            }
-            return;
-        }
-
+        // Built-in compile helpers (IF/ELSE/THEN, BEGIN/UNTIL/WHILE/REPEAT,
+        // DO/LOOP/+LOOP/LEAVE, [, DOES>, POSTPONE, LITERAL) are dict-resident
+        // primitives marked IMMEDIATE; they fire via the immediate-words
+        // mechanism below, exactly the same path user-defined IMMEDIATE
+        // words take. The hardcoded special-case checks that used to live
+        // here are gone.
+        //
         // Immediate words execute inline at compile time instead of being
         // compiled into the body — the Forth way to extend the compiler.
         if self.immediate_words.contains(upper) {
@@ -1217,15 +1052,42 @@ impl Machine {
                 self.emit_trace(&op.label);
             }
             OpKind::PostponeCall(name) => {
-                if self.compiling.is_some() {
+                // For non-immediate NAME, splice a CallByName(NAME) into the
+                // currently-compiling word so the outer word, at run time,
+                // calls NAME. For immediate NAME (the standard Forth case),
+                // EXECUTE NAME right now — that's what would happen if NAME
+                // had appeared in the outer source where the POSTPONE fires.
+                if self.compiling.is_none() {
+                    self.output
+                        .push(format!("POSTPONE: not compiling, cannot postpone {}", name));
+                    self.emit_trace(&op.label);
+                    return;
+                }
+                if self.immediate_words.contains(name) {
+                    let word = self.dictionary.get(name).cloned();
+                    if let Some(word) = word {
+                        match word {
+                            Word::Primitive(p) => self.execute_primitive(p),
+                            Word::User(ops) => self.run_user(name, ops),
+                            Word::Variable(addr) => self.stack.push(Value::Int(addr)),
+                            Word::Constant(v) => self.stack.push(Value::Int(v)),
+                            Word::Created { data_addr, does_ops } => {
+                                self.stack.push(Value::Int(data_addr));
+                                if let Some(inner) = does_ops {
+                                    self.run_user(name, inner);
+                                }
+                            }
+                        }
+                    } else {
+                        self.output
+                            .push(format!("POSTPONE: word {} no longer defined", name));
+                    }
+                } else {
                     let p = self.compiling.as_mut().unwrap();
                     p.body.push(Op {
                         label: name.clone(),
                         kind: OpKind::CallByName(name.clone()),
                     });
-                } else {
-                    self.output
-                        .push(format!("POSTPONE: not compiling, cannot postpone {}", name));
                 }
                 self.emit_trace(&op.label);
             }
@@ -1260,6 +1122,22 @@ impl Machine {
             PrimitiveId::LShift => self.prim_lshift(),
             PrimitiveId::RShift => self.prim_rshift(),
             PrimitiveId::CompileComma => self.prim_compile_comma(),
+            PrimitiveId::If => self.prim_if(),
+            PrimitiveId::Else => self.prim_else(),
+            PrimitiveId::Then => self.prim_then(),
+            PrimitiveId::Begin => self.prim_begin(),
+            PrimitiveId::Until => self.prim_until(),
+            PrimitiveId::While => self.prim_while(),
+            PrimitiveId::Repeat => self.prim_repeat(),
+            PrimitiveId::Do => self.prim_do(),
+            PrimitiveId::LoopPrim => self.prim_loop(),
+            PrimitiveId::PlusLoop => self.prim_plus_loop(),
+            PrimitiveId::LeavePrim => self.prim_leave(),
+            PrimitiveId::LBracket => self.prim_l_bracket(),
+            PrimitiveId::RBracket => self.prim_r_bracket(),
+            PrimitiveId::Literal => self.prim_literal(),
+            PrimitiveId::DoesArrow => self.prim_does_arrow(),
+            PrimitiveId::Postpone => self.prim_postpone(),
             PrimitiveId::Dot => self.prim_dot(),
             PrimitiveId::DotS => self.prim_dot_s(),
             PrimitiveId::Clear => self.prim_clear(),
@@ -1749,6 +1627,272 @@ impl Machine {
                 self.stack.push(Value::Int(r));
             }
             _ => self.output.push("RSHIFT: need two ints".to_string()),
+        }
+    }
+
+    fn prim_if(&mut self) {
+        let p = match self.compiling.as_mut() {
+            Some(p) => p,
+            None => {
+                self.output.push("IF: not compiling".to_string());
+                return;
+            }
+        };
+        let idx = p.body.len();
+        p.body.push(Op {
+            label: "IF".to_string(),
+            kind: OpKind::Branch0(0),
+        });
+        p.cf_stack.push(idx);
+    }
+
+    fn prim_else(&mut self) {
+        let branch_idx = match self.compiling.as_mut() {
+            Some(p) => match p.cf_stack.pop() {
+                Some(i) => i,
+                None => {
+                    self.output.push("ELSE: not in IF".to_string());
+                    return;
+                }
+            },
+            None => {
+                self.output.push("ELSE: not compiling".to_string());
+                return;
+            }
+        };
+        let p = self.compiling.as_mut().unwrap();
+        let jump_idx = p.body.len();
+        p.body.push(Op {
+            label: "ELSE".to_string(),
+            kind: OpKind::Jump(0),
+        });
+        let target = p.body.len();
+        if let OpKind::Branch0(t) = &mut p.body[branch_idx].kind {
+            *t = target;
+        }
+        p.cf_stack.push(jump_idx);
+    }
+
+    fn prim_then(&mut self) {
+        let idx = match self.compiling.as_mut() {
+            Some(p) => match p.cf_stack.pop() {
+                Some(i) => i,
+                None => {
+                    self.output.push("THEN: not in IF/ELSE".to_string());
+                    return;
+                }
+            },
+            None => {
+                self.output.push("THEN: not compiling".to_string());
+                return;
+            }
+        };
+        let p = self.compiling.as_mut().unwrap();
+        let target = p.body.len();
+        p.body.push(Op {
+            label: "THEN".to_string(),
+            kind: OpKind::Noop,
+        });
+        match &mut p.body[idx].kind {
+            OpKind::Branch0(t) | OpKind::Jump(t) => *t = target,
+            _ => {}
+        }
+    }
+
+    fn prim_begin(&mut self) {
+        let p = match self.compiling.as_mut() {
+            Some(p) => p,
+            None => {
+                self.output.push("BEGIN: not compiling".to_string());
+                return;
+            }
+        };
+        let idx = p.body.len();
+        p.body.push(Op {
+            label: "BEGIN".to_string(),
+            kind: OpKind::Noop,
+        });
+        p.cf_stack.push(idx);
+    }
+
+    fn prim_until(&mut self) {
+        let target = match self.compiling.as_mut() {
+            Some(p) => match p.cf_stack.pop() {
+                Some(i) => i,
+                None => {
+                    self.output.push("UNTIL: not in BEGIN".to_string());
+                    return;
+                }
+            },
+            None => {
+                self.output.push("UNTIL: not compiling".to_string());
+                return;
+            }
+        };
+        let p = self.compiling.as_mut().unwrap();
+        p.body.push(Op {
+            label: "UNTIL".to_string(),
+            kind: OpKind::Branch0(target),
+        });
+    }
+
+    fn prim_while(&mut self) {
+        let p = match self.compiling.as_mut() {
+            Some(p) => p,
+            None => {
+                self.output.push("WHILE: not compiling".to_string());
+                return;
+            }
+        };
+        let idx = p.body.len();
+        p.body.push(Op {
+            label: "WHILE".to_string(),
+            kind: OpKind::Branch0(0),
+        });
+        p.cf_stack.push(idx);
+    }
+
+    fn prim_repeat(&mut self) {
+        let (while_idx, begin_idx) = {
+            let p = match self.compiling.as_mut() {
+                Some(p) => p,
+                None => {
+                    self.output.push("REPEAT: not compiling".to_string());
+                    return;
+                }
+            };
+            let w = match p.cf_stack.pop() {
+                Some(i) => i,
+                None => {
+                    self.output.push("REPEAT: not in WHILE".to_string());
+                    return;
+                }
+            };
+            let b = match p.cf_stack.pop() {
+                Some(i) => i,
+                None => {
+                    self.output.push("REPEAT: not in BEGIN".to_string());
+                    p.cf_stack.push(w);
+                    return;
+                }
+            };
+            (w, b)
+        };
+        let p = self.compiling.as_mut().unwrap();
+        p.body.push(Op {
+            label: "REPEAT".to_string(),
+            kind: OpKind::Jump(begin_idx),
+        });
+        let target = p.body.len();
+        if let OpKind::Branch0(t) = &mut p.body[while_idx].kind {
+            *t = target;
+        }
+    }
+
+    fn prim_do(&mut self) {
+        let p = match self.compiling.as_mut() {
+            Some(p) => p,
+            None => {
+                self.output.push("DO: not compiling".to_string());
+                return;
+            }
+        };
+        let idx = p.body.len();
+        p.body.push(Op {
+            label: "DO".to_string(),
+            kind: OpKind::LoopEnter,
+        });
+        p.cf_stack.push(idx);
+        p.leave_stack.push(Vec::new());
+    }
+
+    fn prim_loop(&mut self) {
+        if self.compiling.is_none() {
+            self.output.push("LOOP: not compiling".to_string());
+            return;
+        }
+        self.close_do_loop("LOOP", false);
+    }
+
+    fn prim_plus_loop(&mut self) {
+        if self.compiling.is_none() {
+            self.output.push("+LOOP: not compiling".to_string());
+            return;
+        }
+        self.close_do_loop("+LOOP", true);
+    }
+
+    fn prim_leave(&mut self) {
+        let p = match self.compiling.as_mut() {
+            Some(p) => p,
+            None => {
+                self.output.push("LEAVE: not compiling".to_string());
+                return;
+            }
+        };
+        if p.leave_stack.is_empty() {
+            self.output.push("LEAVE: not in DO".to_string());
+            return;
+        }
+        let idx = p.body.len();
+        p.body.push(Op {
+            label: "LEAVE".to_string(),
+            kind: OpKind::LeaveLoop(0),
+        });
+        let depth = p.leave_stack.len();
+        p.leave_stack[depth - 1].push(idx);
+    }
+
+    fn prim_l_bracket(&mut self) {
+        self.paused_compile = self.compiling.take();
+    }
+
+    fn prim_r_bracket(&mut self) {
+        match self.paused_compile.take() {
+            Some(p) => self.compiling = Some(p),
+            None => self.output.push("]: not paused".to_string()),
+        }
+    }
+
+    fn prim_literal(&mut self) {
+        if self.compiling.is_none() {
+            self.output.push("LITERAL: not compiling".to_string());
+            return;
+        }
+        let n = match self.pop_int() {
+            Some(n) => n,
+            None => {
+                self.output.push("LITERAL: stack empty".to_string());
+                return;
+            }
+        };
+        let p = self.compiling.as_mut().unwrap();
+        p.body.push(Op {
+            label: n.to_string(),
+            kind: OpKind::PushInt(n),
+        });
+    }
+
+    fn prim_does_arrow(&mut self) {
+        let p = match self.compiling.as_mut() {
+            Some(p) => p,
+            None => {
+                self.output.push("DOES>: not compiling".to_string());
+                return;
+            }
+        };
+        p.body.push(Op {
+            label: "DOES>".to_string(),
+            kind: OpKind::Does,
+        });
+    }
+
+    fn prim_postpone(&mut self) {
+        match self.compiling.as_mut() {
+            Some(p) => p.pending_postpone = true,
+            None => self
+                .output
+                .push("POSTPONE: not compiling".to_string()),
         }
     }
 
