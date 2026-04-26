@@ -74,3 +74,37 @@
     ELSE I .
     THEN THEN THEN
   LOOP CR ;
+
+\ Sieve of Eratosthenes — primes strictly less than n.
+\   30 SIEVE
+\   -> 2 3 5 7 11 13 17 19 23 29
+\ Allocates n fresh cells at HERE on each call (memory grows).
+VARIABLE SIEVE-BASE
+VARIABLE SIEVE-N
+VARIABLE SIEVE-STEP
+
+: SIEVE-INIT  ( n -- )
+  DUP SIEVE-N !
+  HERE SIEVE-BASE !
+  0 ?DO 1 , LOOP ;
+
+: SIEVE@  ( i -- v )  SIEVE-BASE @ + @ ;
+: SIEVE!  ( v i -- )  SIEVE-BASE @ + ! ;
+
+: SIEVE-STRIKE  ( i -- )
+  DUP SIEVE-STEP !
+  DUP *
+  BEGIN  DUP SIEVE-N @ <  WHILE
+    0 OVER SIEVE!
+    SIEVE-STEP @ +
+  REPEAT
+  DROP ;
+
+: SIEVE  ( n -- )
+  SIEVE-INIT
+  SIEVE-N @ 2 ?DO
+    I SIEVE@ IF
+      I . SPACE
+      I SIEVE-STRIKE
+    THEN
+  LOOP CR ;

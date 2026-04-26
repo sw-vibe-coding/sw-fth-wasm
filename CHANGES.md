@@ -15,6 +15,12 @@
   built on top of the kernel's `LATEST` + `COMPILE,` primitives. Lets
   `: FACT DUP 1 > IF DUP 1 - RECURSE * THEN ;` work without depending
   on FACT being in the dictionary mid-compile
+- `web/forth-bootstrap.fs` gains a Sieve of Eratosthenes — `SIEVE n`
+  prints all primes strictly less than `n`. Uses three `VARIABLE`s
+  (sieve base, n, current step) plus four helper words. Allocates a
+  fresh n-cell sieve at `HERE` on each call, walks 2..n-1, prints each
+  prime and strikes its multiples via `BEGIN/WHILE/REPEAT`. Built
+  entirely on existing kernel + bootstrap vocabulary; no Rust changes
 - `web/forth-bootstrap.fs` gains a `FIZZBUZZ` demo word — a real
   program built entirely from the workbench's vocabulary (nested
   IF/ELSE/THEN, MOD, ?DO/LOOP, `.`, `."`). Demonstrates that the
