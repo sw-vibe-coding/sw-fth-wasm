@@ -29,6 +29,7 @@ function substituteBuildInfo() {
 
 const STORAGE_KEY_SOURCE = "sw-fth-wasm:source";
 const STORAGE_KEY_REPL = "sw-fth-wasm:repl";
+const STORAGE_KEY_STATE = "sw-fth-wasm:state";
 
 function restoreFromStorage(el, key) {
   try {
@@ -51,6 +52,32 @@ async function loadBootstrap() {
     // Fetch failed (e.g., offline) — proceed without bootstrap.
   }
   return "";
+}
+
+function saveMachineState() {
+  if (!machine) return;
+  try {
+    const json = machine.save_state();
+    if (json) window.localStorage.setItem(STORAGE_KEY_STATE, json);
+  } catch (_) {
+    // localStorage quota / unavailable — ignore.
+  }
+}
+
+function loadMachineState() {
+  try {
+    const json = window.localStorage.getItem(STORAGE_KEY_STATE);
+    if (json) return machine.load_state(json);
+  } catch (_) {
+    // ignore
+  }
+  return false;
+}
+
+function clearMachineState() {
+  try {
+    window.localStorage.removeItem(STORAGE_KEY_STATE);
+  } catch (_) {}
 }
 
 function persistOnInput(el, key) {
@@ -76,8 +103,11 @@ async function main() {
   // Fetch bootstrap source in parallel with WASM init
   const [bootstrap] = await Promise.all([loadBootstrap(), init()]);
   machine = new Machine();
-  if (bootstrap) {
+  // Restore saved Machine state if present, else load bootstrap fresh.
+  const stateRestored = loadMachineState();
+  if (!stateRestored && bootstrap) {
     machine.load_source(bootstrap);
+    saveMachineState();
   }
   if (!sourceRestored && bootstrap) {
     sourcePane.value = bootstrap;
@@ -90,23 +120,36 @@ async function main() {
   document.getElementById("runBtn").addEventListener("click", () => {
     machine.eval_repl(repl.value);
     render();
+    saveMachineState();
   });
 
   document.getElementById("resetBtn").addEventListener("click", () => {
     machine.reset();
     render();
+    saveMachineState();
   });
 
   document.getElementById("loadSourceBtn").addEventListener("click", () => {
     machine.load_source(sourcePane.value);
     render();
+    saveMachineState();
   });
+
+  const wipeBtn = document.getElementById("wipeBtn");
+  if (wipeBtn) {
+    wipeBtn.addEventListener("click", () => {
+      if (!window.confirm("Clear saved Machine state and reload bootstrap?")) return;
+      clearMachineState();
+      window.location.reload();
+    });
+  }
 
   repl.addEventListener("keydown", (event) => {
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
       event.preventDefault();
       machine.eval_repl(repl.value);
       render();
+      saveMachineState();
     }
   });
 }

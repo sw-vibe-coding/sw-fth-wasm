@@ -117,6 +117,16 @@ export class Machine {
         const len0 = WASM_VECTOR_LEN;
         wasm.machine_load_source(this.__wbg_ptr, ptr0, len0);
     }
+    /**
+     * @param {string} json
+     * @returns {boolean}
+     */
+    load_state(json) {
+        const ptr0 = passStringToWasm0(json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.machine_load_state(this.__wbg_ptr, ptr0, len0);
+        return ret !== 0;
+    }
     constructor() {
         const ret = wasm.machine_new();
         this.__wbg_ptr = ret >>> 0;
@@ -125,6 +135,21 @@ export class Machine {
     }
     reset() {
         wasm.machine_reset(this.__wbg_ptr);
+    }
+    /**
+     * @returns {string}
+     */
+    save_state() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.machine_save_state(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
     }
 }
 if (Symbol.dispose) Machine.prototype[Symbol.dispose] = Machine.prototype.free;

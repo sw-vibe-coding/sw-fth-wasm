@@ -182,6 +182,16 @@
 
 ### UI
 
+- Machine state (dictionary, memory, xt_table, immediate_words, latest,
+  data and return stacks) persists across page reloads via
+  `localStorage` key `sw-fth-wasm:state`. New `Machine::save_state()` /
+  `load_state(json)` round-trip via `serde_json` (added `serde` and
+  `serde_json` to `Cargo.toml`). On page load, if a saved state is
+  present it's restored and the bootstrap is skipped; otherwise the
+  bootstrap loads as before. `main.js` saves after every Run REPL /
+  Load Source / Reset. A new `Wipe` button (next to Run REPL / Reset)
+  clears the saved state and reloads the page so the bootstrap takes
+  over again
 - Source and REPL textareas persist across page reloads via
   `localStorage` (keys `sw-fth-wasm:source` and `sw-fth-wasm:repl`).
   Restored before WASM init so a saved program is visible immediately;

@@ -1,12 +1,13 @@
 use std::collections::{HashMap, HashSet};
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 enum Value {
     Int(i32),
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 enum PrimitiveId {
     Dup,
     Swap,
@@ -73,7 +74,7 @@ enum PrimitiveId {
     Exit,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 enum Word {
     Primitive(PrimitiveId),
     User(Vec<Op>),
@@ -94,13 +95,13 @@ enum NextTokenConsumer {
     Create(i32),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct Op {
     label: String,
     kind: OpKind,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 enum OpKind {
     PushInt(i32),
     CallPrim(PrimitiveId),
@@ -281,6 +282,54 @@ impl Machine {
             .collect::<Vec<_>>()
             .join("\n")
     }
+
+    pub fn save_state(&self) -> String {
+        let state = SavedState {
+            dictionary: self.dictionary.clone(),
+            memory: self.memory.clone(),
+            xt_table: self.xt_table.clone(),
+            immediate_words: self.immediate_words.clone(),
+            latest: self.latest.clone(),
+            anon_counter: self.anon_counter,
+            stack: self.stack.clone(),
+            return_stack: self.return_stack.clone(),
+        };
+        serde_json::to_string(&state).unwrap_or_default()
+    }
+
+    pub fn load_state(&mut self, json: &str) -> bool {
+        match serde_json::from_str::<SavedState>(json) {
+            Ok(s) => {
+                self.dictionary = s.dictionary;
+                self.memory = s.memory;
+                self.xt_table = s.xt_table;
+                self.immediate_words = s.immediate_words;
+                self.latest = s.latest;
+                self.anon_counter = s.anon_counter;
+                self.stack = s.stack;
+                self.return_stack = s.return_stack;
+                self.output.push("State restored.".to_string());
+                true
+            }
+            Err(e) => {
+                self.output
+                    .push(format!("State restore failed: {}", e));
+                false
+            }
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct SavedState {
+    dictionary: HashMap<String, Word>,
+    memory: Vec<Value>,
+    xt_table: Vec<String>,
+    immediate_words: HashSet<String>,
+    latest: Option<String>,
+    anon_counter: u32,
+    stack: Vec<Value>,
+    return_stack: Vec<Value>,
 }
 
 impl Machine {

@@ -12,8 +12,10 @@ export class Machine {
     get_stack_text(): string;
     get_trace_text(): string;
     load_source(src: string): void;
+    load_state(json: string): boolean;
     constructor();
     reset(): void;
+    save_state(): string;
 }
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
@@ -29,8 +31,10 @@ export interface InitOutput {
     readonly machine_get_stack_text: (a: number) => [number, number];
     readonly machine_get_trace_text: (a: number) => [number, number];
     readonly machine_load_source: (a: number, b: number, c: number) => void;
+    readonly machine_load_state: (a: number, b: number, c: number) => number;
     readonly machine_new: () => number;
     readonly machine_reset: (a: number) => void;
+    readonly machine_save_state: (a: number) => [number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
